@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>终极相机：三轴/水平仪变色/全分辨率/横屏交换</title>
+  <title>终极相机：极限范围/线条独立变色/冻结/全屏右上</title>
   <style>
     * {
       margin: 0;
@@ -41,6 +41,8 @@
       transform-origin: center center;
       transition: transform 0.1s ease;
     }
+    /* 冻结时覆盖的canvas（用于显示冻结帧？其实不需要，直接暂停video即可） */
+    /* 但为了UI一致性，我们保留video暂停机制 */
     .overlay {
       position: absolute;
       top: 0;
@@ -50,7 +52,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* 信息面板 (左上) - 增加横滚行 */
+    /* 信息面板 (左上) */
     .info-panel {
       position: absolute;
       top: 12px;
@@ -102,7 +104,7 @@
     #level-canvas {
       position: absolute;
       top: 16px;
-      right: 16px;
+      right: 60px; /* 给全屏按钮留出空间 */
       width: 90px;
       height: 90px;
       border-radius: 50%;
@@ -113,6 +115,35 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       z-index: 35;
       pointer-events: none;
+    }
+
+    /* 全屏按钮 (右上角) */
+    #fullscreenBtn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(30, 30, 40, 0.8);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 40;
+      pointer-events: auto;
+      cursor: pointer;
+      border: none;
+      outline: none;
+    }
+    #fullscreenBtn:active {
+      transform: scale(0.94);
+      background: rgba(80, 80, 120, 0.8);
     }
 
     /* 十字准心 (超细，无阴影) */
@@ -306,7 +337,7 @@
   </div>
 
   <div class="overlay">
-    <!-- 信息面板 (增加横滚角行) -->
+    <!-- 信息面板 -->
     <div class="info-panel">
       <div class="info-row">
         <span class="info-label">🧭 指南针</span>
@@ -343,6 +374,9 @@
     <!-- 水平仪 Canvas -->
     <canvas id="level-canvas" width="90" height="90"></canvas>
 
+    <!-- 全屏按钮 (右上角) -->
+    <button id="fullscreenBtn" title="全屏">⛶</button>
+
     <!-- 十字准心 -->
     <div class="crosshair">
       <div class="crosshair-h"></div>
@@ -350,7 +384,7 @@
       <div class="crosshair-circle"></div>
     </div>
 
-    <!-- 底部工具栏 -->
+    <!-- 底部工具栏 (增加冻结按钮) -->
     <div class="toolbar" id="toolbar" style="display: none;">
       <select id="cameraSelect" title="选择摄像头">
         <option value="">📷 加载设备中...</option>
@@ -364,8 +398,8 @@
         <span id="expValue">0.0EV</span>
         <input type="range" id="expSlider" min="-3" max="3" step="0.1" value="0">
       </div>
+      <button id="freezeBtn" title="冻结画面">❄️ 冻结</button>
       <button id="screenshotBtn" title="保存截图">📸</button>
-      <button id="fullscreenBtn" title="全屏模式">⛶</button>
     </div>
 
     <!-- 启动按钮 -->
@@ -397,13 +431,14 @@
       const zoomValue = document.getElementById('zoomValue');
       const expSlider = document.getElementById('expSlider');
       const expValue = document.getElementById('expValue');
+      const freezeBtn = document.getElementById('freezeBtn');
       const screenshotBtn = document.getElementById('screenshotBtn');
       const fullscreenBtn = document.getElementById('fullscreenBtn');
       const levelCanvas = document.getElementById('level-canvas');
       const ctx = levelCanvas.getContext('2d');
 
       // 状态变量
-      let currentAlpha = '---';   // 航向 (指南针)
+      let currentAlpha = '---';   // 航向
       let currentBeta = '---';    // 俯仰 (原始)
       let currentGamma = '---';   // 横滚 (原始)
       let displayPitch = '---';   // 经过横屏交换后显示的俯仰
@@ -425,37 +460,33 @@
       let exposureSupported = false;
       let exposureMin = -3, exposureMax = 3, exposureStep = 0.1;
       let currentExposure = 0;
+      let frozen = false; // 冻结状态
 
-      // 屏幕方向 (用于横屏交换)
-      let screenOrientation = 0; // 0, 90, 180, 270
+      // 屏幕方向
+      let screenOrientation = 0;
 
       // ================= 工具函数 =================
-      // 根据屏幕方向计算显示的俯仰和横滚 (交换逻辑)
       function computeDisplayAngles(beta, gamma) {
         if (beta === '---' || gamma === '---') return { pitch: '---', roll: '---' };
         const angle = screenOrientation;
         let dispPitch, dispRoll;
         if (Math.abs(angle) === 90 || angle === 270) {
-          // 横屏交换
           if (angle === 90) {
-            dispPitch = gamma;      // 原gamma变成俯仰
-            dispRoll = -beta;        // 原beta取反变成横滚
+            dispPitch = gamma;
+            dispRoll = -beta;
           } else if (angle === -90 || angle === 270) {
             dispPitch = -gamma;
             dispRoll = beta;
           }
         } else {
-          // 竖屏或倒置，不交换
           dispPitch = beta;
           dispRoll = gamma;
         }
         return { pitch: dispPitch.toFixed(1), roll: dispRoll.toFixed(1) };
       }
 
-      // 更新所有显示 (包括分辨率)
       function updateDisplays() {
         headingSpan.innerText = currentAlpha;
-        // 根据屏幕方向计算显示的俯仰/横滚
         if (currentBeta !== '---' && currentGamma !== '---') {
           const disp = computeDisplayAngles(parseFloat(currentBeta), parseFloat(currentGamma));
           displayPitch = disp.pitch;
@@ -480,7 +511,6 @@
         }
       }
 
-      // 显示临时状态
       function showStatus(text, isError = true) {
         statusMsg.style.display = 'block';
         statusMsg.style.background = isError ? 'rgba(220, 20, 60, 0.85)' : 'rgba(40, 167, 69, 0.85)';
@@ -490,8 +520,10 @@
         }, 3000);
       }
 
-      // ================= 传感器：指南针 & 俯仰/横滚 =================
+      // ================= 传感器 =================
       function handleOrientation(event) {
+        if (frozen) return; // 冻结时不更新
+
         let heading = event.alpha;
         let beta = event.beta;
         let gamma = event.gamma;
@@ -513,15 +545,13 @@
           currentGamma = '---';
         }
 
-        // 更新水平仪绘制 (传入原始值，内部会进行交换和变色)
         drawLevel(parseFloat(currentBeta) || null, parseFloat(currentGamma) || null);
         updateDisplays();
       }
 
-      // 绘制水平仪 (一圆两线 + 气泡)，气泡缩小，点线重合时线条变色
+      // 绘制水平仪：每条线独立变绿
       function drawLevel(beta, gamma) {
         if (beta === null || gamma === null || isNaN(beta) || isNaN(gamma)) {
-          // 无数据时画灰色
           ctx.clearRect(0, 0, 90, 90);
           ctx.beginPath();
           ctx.arc(45, 45, 40, 0, 2 * Math.PI);
@@ -531,7 +561,6 @@
           return;
         }
 
-        // 根据屏幕方向交换 beta 和 gamma 以匹配物理直觉
         const angle = screenOrientation;
         let dispBeta = beta;
         let dispGamma = gamma;
@@ -545,17 +574,16 @@
           }
         }
 
-        // 限制显示范围（避免超出圆）
-        const maxOffset = 30; // 最大偏移像素
-        const offsetX = (dispGamma / 90) * maxOffset;  // gamma 范围 -90~90
-        const offsetY = (dispBeta / 180) * maxOffset;  // beta 范围 -180~180，但通常前后倾斜不会太大，限制一下
-        // 限幅
+        const maxOffset = 30;
+        const offsetX = (dispGamma / 90) * maxOffset;
+        const offsetY = (dispBeta / 180) * maxOffset;
         const ballX = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetX));
         const ballY = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetY));
 
-        // 判断气泡是否接近中心 (阈值 3 像素)
-        const centerDist = Math.hypot(ballX - 45, ballY - 45);
-        const isCentered = centerDist < 4; // 小于4像素视为重合
+        // 判断气泡与水平线 (y=45) 和垂直线 (x=45) 的距离
+        const threshold = 4; // 像素
+        const nearHorizontal = Math.abs(ballY - 45) < threshold;
+        const nearVertical = Math.abs(ballX - 45) < threshold;
 
         // 绘制背景圆
         ctx.clearRect(0, 0, 90, 90);
@@ -565,18 +593,21 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // 绘制十字参考线 (中心两条线) - 根据是否重合变色
+        // 绘制十字线 (独立变色)
         ctx.beginPath();
-        ctx.strokeStyle = isCentered ? '#00ff00' : 'rgba(255,255,255,0.5)'; // 重合变绿
+        ctx.strokeStyle = nearHorizontal ? '#00ff00' : 'rgba(255,255,255,0.5)';
         ctx.lineWidth = 1.5;
         ctx.moveTo(45, 15);
         ctx.lineTo(45, 75);
         ctx.stroke();
+
+        ctx.beginPath();
+        ctx.strokeStyle = nearVertical ? '#00ff00' : 'rgba(255,255,255,0.5)';
         ctx.moveTo(15, 45);
         ctx.lineTo(75, 45);
         ctx.stroke();
 
-        // 绘制气泡 (小圆) - 缩小为半径4
+        // 绘制气泡 (半径4)
         ctx.beginPath();
         ctx.arc(ballX, ballY, 4, 0, 2 * Math.PI);
         ctx.fillStyle = '#ffd966';
@@ -586,22 +617,18 @@
         ctx.shadowBlur = 0;
       }
 
-      // 监听屏幕方向变化
       function updateOrientation() {
         if (screen.orientation) {
           screenOrientation = screen.orientation.angle;
         } else if (window.orientation !== undefined) {
           screenOrientation = window.orientation;
         }
-        // 重新绘制水平仪 (使用最近的原始角度)
         if (currentBeta !== '---' && currentGamma !== '---') {
           drawLevel(parseFloat(currentBeta), parseFloat(currentGamma));
         }
-        // 更新显示数值 (因为交换可能变化)
         updateDisplays();
       }
       window.addEventListener('orientationchange', updateOrientation);
-      // 初始获取方向
       updateOrientation();
 
       function setupOrientationListener() {
@@ -628,7 +655,7 @@
         }
       }
 
-      // ================= GPS 定位 =================
+      // ================= GPS =================
       function startGPS() {
         if (!navigator.geolocation) {
           showStatus('此设备不支持GPS', true);
@@ -636,6 +663,7 @@
         }
         gpsWatchId = navigator.geolocation.watchPosition(
           (pos) => {
+            if (frozen) return;
             const coords = pos.coords;
             currentLat = coords.latitude.toFixed(5);
             currentLon = coords.longitude.toFixed(5);
@@ -679,15 +707,15 @@
         cameraSelect.innerHTML = options;
       }
 
-      // ================= 摄像头管理 (尝试所有常见分辨率) =================
+      // ================= 摄像头管理 (极限范围) =================
       async function startCamera(deviceId) {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
         }
+        // 如果之前冻结，解除冻结
+        if (frozen) unfreeze();
         try {
-          // 常见分辨率列表 (从高到低，覆盖8000x6000以下)
           const commonResolutions = [
-            { width: 4096, height: 3072 },
             { width: 3840, height: 2160 },
             { width: 2560, height: 1440 },
             { width: 1920, height: 1080 },
@@ -702,8 +730,8 @@
           const constraints = {
             video: {
               deviceId: deviceId ? { exact: deviceId } : undefined,
-              width: { ideal: 5120 }, // 理想最大
-              height: { ideal: 2880 },
+              width: { ideal: 4096 },
+              height: { ideal: 3072 },
               advanced: advancedConstraints
             },
             audio: false
@@ -720,13 +748,14 @@
             currentDeviceId = settings.deviceId;
           }
 
-          // 检查 zoom 能力
           const capabilities = track.getCapabilities ? track.getCapabilities() : null;
+
+          // 缩放 - 使用设备极限范围
           if (capabilities && capabilities.zoom) {
             zoomSupported = true;
             useDigitalZoom = false;
-            zoomMin = capabilities.zoom.min || 1;
-            zoomMax = capabilities.zoom.max || 5;
+            zoomMin = capabilities.zoom.min;
+            zoomMax = capabilities.zoom.max;
             zoomSlider.min = zoomMin;
             zoomSlider.max = zoomMax;
             zoomSlider.step = capabilities.zoom.step || 0.1;
@@ -736,14 +765,17 @@
               zoomValue.innerText = settings.zoom.toFixed(1) + 'x';
             } else {
               zoomSlider.value = zoomMin;
-              zoomValue.innerText = zoomMin + 'x';
+              zoomValue.innerText = zoomMin.toFixed(1) + 'x';
             }
             video.style.transform = 'scale(1)';
           } else {
             zoomSupported = false;
             useDigitalZoom = true;
-            zoomSlider.min = 1;
-            zoomSlider.max = 5;
+            // 数字变焦范围扩大至 1-10 (可根据需要调整)
+            zoomMin = 1;
+            zoomMax = 10;
+            zoomSlider.min = zoomMin;
+            zoomSlider.max = zoomMax;
             zoomSlider.step = 0.1;
             zoomSlider.disabled = false;
             zoomSlider.value = digitalZoomLevel;
@@ -751,11 +783,11 @@
             applyDigitalZoom(digitalZoomLevel);
           }
 
-          // 检查曝光补偿能力
+          // 曝光补偿 - 使用设备极限范围
           if (capabilities && capabilities.exposureCompensation) {
             exposureSupported = true;
-            exposureMin = capabilities.exposureCompensation.min || -3;
-            exposureMax = capabilities.exposureCompensation.max || 3;
+            exposureMin = capabilities.exposureCompensation.min;
+            exposureMax = capabilities.exposureCompensation.max;
             exposureStep = capabilities.exposureCompensation.step || 0.1;
             expSlider.min = exposureMin;
             expSlider.max = exposureMax;
@@ -775,7 +807,7 @@
           }
 
           await enumerateCameras();
-          updateDisplays(); // 更新分辨率
+          updateDisplays();
           showStatus('摄像头已开启', false);
         } catch (err) {
           console.error('摄像头错误:', err);
@@ -787,15 +819,13 @@
         }
       }
 
-      // 应用数字变焦
       function applyDigitalZoom(level) {
         if (!useDigitalZoom) return;
-        digitalZoomLevel = Math.min(5, Math.max(1, level));
+        digitalZoomLevel = Math.min(zoomMax, Math.max(zoomMin, level));
         video.style.transform = `scale(${digitalZoomLevel})`;
         zoomValue.innerText = digitalZoomLevel.toFixed(1) + 'x';
       }
 
-      // 设置光学/数字变焦
       function setZoom(level) {
         if (!currentStream) return;
         if (zoomSupported) {
@@ -810,7 +840,6 @@
         }
       }
 
-      // 设置曝光补偿
       function setExposure(ev) {
         if (!currentStream || !exposureSupported) return;
         const track = currentStream.getVideoTracks()[0];
@@ -821,9 +850,10 @@
         }
       }
 
-      // ================= 触发式自动对焦 (中心) =================
+      // ================= 自动对焦 =================
       async function triggerAutoFocus() {
         if (!currentStream) return;
+        if (frozen) unfreeze();
         const track = currentStream.getVideoTracks()[0];
         if (!track) return;
         const capabilities = track.getCapabilities ? track.getCapabilities() : null;
@@ -843,7 +873,43 @@
         }
       }
 
-      // ================= 截屏 =================
+      // ================= 冻结/解冻 =================
+      function freeze() {
+        if (frozen) return;
+        frozen = true;
+        video.pause(); // 暂停视频
+        freezeBtn.innerText = '❄️ 解冻';
+        showStatus('画面已冻结', false);
+      }
+
+      function unfreeze() {
+        if (!frozen) return;
+        frozen = false;
+        video.play(); // 恢复播放
+        freezeBtn.innerText = '❄️ 冻结';
+        // 强制更新一次传感器显示
+        if (deviceOrientationHandler) {
+          // 触发一次伪更新？但传感器数据可能已经变化，重新绘制即可
+          drawLevel(parseFloat(currentBeta) || null, parseFloat(currentGamma) || null);
+          updateDisplays();
+        }
+        showStatus('已解冻', false);
+      }
+
+      function toggleFreeze() {
+        if (frozen) {
+          unfreeze();
+        } else {
+          freeze();
+        }
+      }
+
+      // 其他操作自动解冻
+      function autoUnfreeze() {
+        if (frozen) unfreeze();
+      }
+
+      // ================= 截屏 (适配冻结) =================
       function takeScreenshot() {
         if (!video.videoWidth || !video.videoHeight) {
           showStatus('摄像头尚未就绪', true);
@@ -853,6 +919,7 @@
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
+        // 如果冻结，video已经暂停，直接绘制当前帧
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         // 绘制十字准心
         ctx.beginPath();
@@ -873,7 +940,7 @@
         ctx.lineWidth = canvas.width / 400;
         ctx.stroke();
 
-        // 绘制信息 (使用当前显示的数值)
+        // 绘制信息 (使用当前显示的数值，即使冻结也使用冻结时的值)
         ctx.font = `bold ${canvas.width/35}px 'Courier New', monospace`;
         ctx.fillStyle = '#ffd966';
         ctx.shadowColor = '#000';
@@ -909,11 +976,9 @@
         setupOrientationListener();
         startGPS();
         try {
-          // 先请求一次权限以获取设备列表
           const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           tempStream.getTracks().forEach(t => t.stop());
           await enumerateCameras();
-          // 选择后置
           const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('后置'));
           const selectedDeviceId = backCamera ? backCamera.deviceId : (videoDevices[0] ? videoDevices[0].deviceId : null);
           await startCamera(selectedDeviceId);
@@ -931,6 +996,7 @@
       startBtn.addEventListener('click', onStartClick);
 
       cameraSelect.addEventListener('change', (e) => {
+        autoUnfreeze();
         const deviceId = e.target.value;
         if (deviceId) startCamera(deviceId);
       });
@@ -938,6 +1004,7 @@
       focusBtn.addEventListener('click', triggerAutoFocus);
 
       zoomSlider.addEventListener('input', (e) => {
+        autoUnfreeze();
         const val = parseFloat(e.target.value);
         setZoom(val);
         if (zoomSupported) {
@@ -946,23 +1013,24 @@
       });
 
       expSlider.addEventListener('input', (e) => {
+        autoUnfreeze();
         const val = parseFloat(e.target.value);
         currentExposure = val;
         expValue.innerText = val.toFixed(1) + 'EV';
         setExposure(val);
       });
 
+      freezeBtn.addEventListener('click', toggleFreeze);
+
       screenshotBtn.addEventListener('click', takeScreenshot);
       fullscreenBtn.addEventListener('click', toggleFullscreen);
 
-      // 非iOS预监听传感器
       if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) {
         window.addEventListener('deviceorientation', handleOrientation);
         orientationListenerActive = true;
         hintText.innerText = '传感器已自动监听，点击下方启动摄像头和GPS';
       }
 
-      // 清理
       window.addEventListener('beforeunload', () => {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
