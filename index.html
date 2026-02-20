@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>增强版：俯角/指南针/准心/GPS/切换/放大/截屏</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      position: fixed;
+      touch-action: none;
+    }
+    #video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+      pointer-events: none;
+    }
+    /* 左上信息面板：角度 + GPS */
+    .info-panel {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      color: white;
+      padding: 14px 20px;
+      border-radius: 28px;
+      font-size: 15px;
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+      pointer-events: none;
+      z-index: 20;
+      min-width: 210px;
+      line-height: 1.5;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      white-space: nowrap;
+    }
+    .info-label {
+      opacity: 0.7;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .info-value {
+      font-family: 'Courier New', monospace;
+      font-weight: 600;
+      color: #ffd966;
+      text-shadow: 0 0 6px #ffb700;
+      font-size: 18px;
+    }
+    .info-unit {
+      font-size: 12px;
+      color: #ccc;
+      margin-left: 2px;
+    }
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.2);
+      margin: 8px 0;
+    }
+    /* 十字准心 (更细) */
+    .crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80px;
+      height: 80px;
+      z-index: 30;
+      pointer-events: none;
+    }
+    .crosshair-h {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: 1.5px; /* 细一点 */
+      background: white;
+      transform: translateY(-50%);
+      border-radius: 2px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3);
+      opacity: 0.95;
+    }
+    .crosshair-v {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 1.5px; /* 细一点 */
+      height: 100%;
+      background: white;
+      transform: translateX(-50%);
+      border-radius: 2px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3);
+      opacity: 0.95;
+    }
+    .crosshair-circle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 30px;
+      height: 30px;
+      border: 1.5px solid rgba(255,255,255,0.9);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(0,0,0,0.6);
+      pointer-events: none;
+    }
+
+    /* 底部工具栏 (可点击) */
+    .toolbar {
+      position: absolute;
+      bottom: 30px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 12px 20px;
+      z-index: 100;
+      pointer-events: none; /* 容器不拦截，内部按钮可点 */
+    }
+    .toolbar button, .zoom-container {
+      pointer-events: auto;
+      background: rgba(30, 30, 40, 0.8);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 40px;
+      color: white;
+      font-size: 16px;
+      padding: 12px 22px;
+      font-weight: 500;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+      transition: 0.1s;
+      min-width: 60px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .toolbar button:active {
+      transform: scale(0.94);
+      background: rgba(80, 80, 120, 0.8);
+    }
+    .zoom-container {
+      padding: 8px 18px;
+      gap: 8px;
+      display: flex;
+      align-items: center;
+    }
+    .zoom-container span {
+      color: #ffd966;
+      font-weight: 600;
+      min-width: 45px;
+      text-align: center;
+    }
+    .zoom-container input[type=range] {
+      width: 130px;
+      height: 5px;
+      -webkit-appearance: none;
+      background: rgba(255,255,255,0.3);
+      border-radius: 10px;
+      outline: none;
+    }
+    .zoom-container input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #ffd966;
+      border: 2px solid #ffb700;
+      cursor: pointer;
+    }
+    /* 启动按钮 (初始可见) */
+    #startBtn {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ffd966;
+      border: none;
+      padding: 16px 36px;
+      border-radius: 50px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a1a2e;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.3);
+      z-index: 200;
+      pointer-events: auto;
+      transition: 0.2s;
+      border: 1px solid rgba(255,255,255,0.5);
+      letter-spacing: 1px;
+    }
+    #startBtn:active {
+      transform: translateX(-50%) scale(0.95);
+      background: #f5c542;
+    }
+    #startBtn.hidden {
+      display: none;
+    }
+    /* 提示与状态 */
+    .status-message {
+      position: absolute;
+      top: 130px;
+      right: 20px;
+      background: rgba(220, 20, 60, 0.85);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 30px;
+      font-size: 14px;
+      z-index: 250;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.2);
+      display: none;
+    }
+    .hint-tip {
+      position: absolute;
+      bottom: 110px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      color: rgba(255,255,255,0.6);
+      font-size: 14px;
+      z-index: 90;
+      pointer-events: none;
+      text-shadow: 0 2px 6px black;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+
+  <div class="overlay">
+    <!-- 综合信息面板 (角度+GPS) -->
+    <div class="info-panel">
+      <div class="info-row">
+        <span class="info-label">🧭 指南针</span>
+        <span class="info-value" id="headingValue">---</span><span class="info-unit">°</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">📐 俯仰角</span>
+        <span class="info-value" id="pitchValue">---</span><span class="info-unit">°</span>
+      </div>
+      <div class="divider"></div>
+      <div class="info-row">
+        <span class="info-label">🛰️ 纬度</span>
+        <span class="info-value" id="latValue">---</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">🛰️ 经度</span>
+        <span class="info-value" id="lonValue">---</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">⬆️ 海拔</span>
+        <span class="info-value" id="altValue">---</span><span class="info-unit">m</span>
+      </div>
+    </div>
+
+    <!-- 中央十字准心 (已变细) -->
+    <div class="crosshair">
+      <div class="crosshair-h"></div>
+      <div class="crosshair-v"></div>
+      <div class="crosshair-circle"></div>
+    </div>
+
+    <!-- 底部工具栏 (初始隐藏，启动后显示) -->
+    <div class="toolbar" id="toolbar" style="display: none;">
+      <button id="switchCamBtn" title="切换摄像头">🔄 前后</button>
+      <div class="zoom-container">
+        <span id="zoomValue">1.0x</span>
+        <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" disabled>
+      </div>
+      <button id="screenshotBtn" title="保存截图">📸 截屏</button>
+    </div>
+
+    <!-- 启动按钮 -->
+    <button id="startBtn">▶ 启动相机 & 传感器</button>
+    <div class="hint-tip" id="hintText">点击按钮获取摄像头、角度和GPS</div>
+
+    <!-- 状态浮窗 -->
+    <div class="status-message" id="statusMsg"></div>
+  </div>
+
+  <script>
+    (function() {
+      // DOM 元素
+      const video = document.getElementById('video');
+      const startBtn = document.getElementById('startBtn');
+      const toolbar = document.getElementById('toolbar');
+      const headingSpan = document.getElementById('headingValue');
+      const pitchSpan = document.getElementById('pitchValue');
+      const latSpan = document.getElementById('latValue');
+      const lonSpan = document.getElementById('lonValue');
+      const altSpan = document.getElementById('altValue');
+      const statusMsg = document.getElementById('statusMsg');
+      const hintText = document.getElementById('hintText');
+      const switchCamBtn = document.getElementById('switchCamBtn');
+      const zoomSlider = document.getElementById('zoomSlider');
+      const zoomValue = document.getElementById('zoomValue');
+      const screenshotBtn = document.getElementById('screenshotBtn');
+
+      // 状态变量
+      let currentHeading = '---';
+      let currentPitch = '---';
+      let currentLat = '---';
+      let currentLon = '---';
+      let currentAlt = '---';
+      let streamActive = false;
+      let orientationListenerActive = false;
+      let gpsWatchId = null;
+      let deviceOrientationHandler = null;
+      let currentFacingMode = 'environment'; // 默认后置
+      let currentStream = null;
+      let zoomSupported = false;
+      let zoomMin = 1, zoomMax = 5; // 默认值
+
+      // 显示临时状态
+      function showStatus(text, isError = true) {
+        statusMsg.style.display = 'block';
+        statusMsg.style.background = isError ? 'rgba(220, 20, 60, 0.85)' : 'rgba(40, 167, 69, 0.85)';
+        statusMsg.innerText = text;
+        setTimeout(() => {
+          statusMsg.style.display = 'none';
+        }, 3000);
+      }
+
+      // 更新所有显示
+      function updateDisplays() {
+        headingSpan.innerText = currentHeading;
+        pitchSpan.innerText = currentPitch;
+        latSpan.innerText = currentLat;
+        lonSpan.innerText = currentLon;
+        altSpan.innerText = currentAlt;
+      }
+
+      // ================= 传感器：指南针 & 俯仰角 =================
+      function handleOrientation(event) {
+        let heading = event.alpha;
+        let pitch = event.beta;
+        if (heading !== null && !isNaN(heading)) {
+          heading = (heading + 360) % 360;
+          currentHeading = heading.toFixed(1);
+        } else {
+          currentHeading = '---';
+        }
+        if (pitch !== null && !isNaN(pitch)) {
+          currentPitch = pitch.toFixed(1);
+        } else {
+          currentPitch = '---';
+        }
+        updateDisplays();
+      }
+
+      function setupOrientationListener() {
+        if (deviceOrientationHandler) {
+          window.removeEventListener('deviceorientation', deviceOrientationHandler);
+        }
+        deviceOrientationHandler = handleOrientation;
+
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          DeviceOrientationEvent.requestPermission()
+            .then(permissionState => {
+              if (permissionState === 'granted') {
+                window.addEventListener('deviceorientation', deviceOrientationHandler);
+                orientationListenerActive = true;
+                showStatus('指南针已授权', false);
+              } else {
+                hintText.innerText = '指南针权限被拒绝';
+              }
+            })
+            .catch(err => {
+              console.warn('传感器权限请求失败', err);
+            });
+        } else {
+          window.addEventListener('deviceorientation', deviceOrientationHandler);
+          orientationListenerActive = true;
+        }
+      }
+
+      // ================= GPS 定位 =================
+      function startGPS() {
+        if (!navigator.geolocation) {
+          showStatus('此设备不支持GPS', true);
+          return;
+        }
+        gpsWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const coords = pos.coords;
+            currentLat = coords.latitude.toFixed(5);
+            currentLon = coords.longitude.toFixed(5);
+            currentAlt = (coords.altitude !== null) ? coords.altitude.toFixed(1) : 'N/A';
+            updateDisplays();
+            showStatus('GPS定位成功', false);
+          },
+          (err) => {
+            let msg = 'GPS错误: ';
+            switch(err.code) {
+              case 1: msg += '权限被拒绝'; break;
+              case 2: msg += '位置不可用'; break;
+              case 3: msg += '超时'; break;
+              default: msg += err.message;
+            }
+            showStatus(msg, true);
+            currentLat = currentLon = currentAlt = '---';
+            updateDisplays();
+          },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+        );
+      }
+
+      // ================= 摄像头管理 =================
+      async function startCamera(facingMode = currentFacingMode) {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        try {
+          const constraints = {
+            video: {
+              facingMode: { ideal: facingMode },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            },
+            audio: false
+          };
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          video.srcObject = stream;
+          currentStream = stream;
+          streamActive = true;
+          await video.play();
+
+          // 获取zoom能力并更新滑块
+          const track = stream.getVideoTracks()[0];
+          const capabilities = track.getCapabilities && track.getCapabilities();
+          const settings = track.getSettings && track.getSettings();
+          if (capabilities && capabilities.zoom) {
+            zoomSupported = true;
+            zoomMin = capabilities.zoom.min || 1;
+            zoomMax = capabilities.zoom.max || 5;
+            zoomSlider.min = zoomMin;
+            zoomSlider.max = zoomMax;
+            zoomSlider.step = capabilities.zoom.step || 0.1;
+            zoomSlider.disabled = false;
+            // 设置当前zoom值
+            if (settings && settings.zoom) {
+              zoomSlider.value = settings.zoom;
+              zoomValue.innerText = settings.zoom.toFixed(1) + 'x';
+            } else {
+              zoomSlider.value = zoomMin;
+              zoomValue.innerText = zoomMin + 'x';
+            }
+          } else {
+            zoomSupported = false;
+            zoomSlider.disabled = true;
+            zoomValue.innerText = '不支持';
+          }
+
+          showStatus('摄像头已开启', false);
+        } catch (err) {
+          console.error('摄像头错误:', err);
+          let errorMsg = '无法访问摄像头';
+          if (err.name === 'NotAllowedError') errorMsg = '摄像头权限被拒绝';
+          else if (err.name === 'NotFoundError') errorMsg = '未找到摄像头';
+          else if (err.name === 'NotReadableError') errorMsg = '摄像头被占用';
+          showStatus(errorMsg, true);
+        }
+      }
+
+      // 切换前后摄像头
+      async function switchCamera() {
+        currentFacingMode = (currentFacingMode === 'environment' ? 'user' : 'environment');
+        await startCamera(currentFacingMode);
+      }
+
+      // 设置zoom
+      function setZoom(zoomLevel) {
+        if (!currentStream || !zoomSupported) return;
+        const track = currentStream.getVideoTracks()[0];
+        if (track && track.applyConstraints) {
+          track.applyConstraints({
+            advanced: [{ zoom: parseFloat(zoomLevel) }]
+          }).catch(e => console.warn('zoom失败', e));
+        }
+      }
+
+      // ================= 截屏 =================
+      function takeScreenshot() {
+        if (!video.videoWidth || !video.videoHeight) {
+          showStatus('摄像头尚未就绪', true);
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        // 绘制视频帧
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // 绘制十字准心 (中心)
+        ctx.beginPath();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = canvas.width / 200; // 动态细线
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 10;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const size = Math.min(canvas.width, canvas.height) * 0.1; // 准心大小 10%
+        ctx.moveTo(cx - size, cy);
+        ctx.lineTo(cx + size, cy);
+        ctx.moveTo(cx, cy - size);
+        ctx.lineTo(cx, cy + size);
+        ctx.stroke();
+        // 绘制小圆圈
+        ctx.beginPath();
+        ctx.arc(cx, cy, size * 0.4, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = canvas.width / 300;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // 绘制角度/GPS信息 (左上角)
+        ctx.font = `bold ${canvas.width/30}px 'Courier New', monospace`;
+        ctx.fillStyle = '#ffd966';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        const pad = canvas.width / 40;
+        ctx.fillText(`🧭 ${currentHeading}°`, pad, pad * 3);
+        ctx.fillText(`📐 ${currentPitch}°`, pad, pad * 6);
+        ctx.fillText(`🛰️ ${currentLat}, ${currentLon}`, pad, pad * 9);
+        ctx.fillText(`⬆️ ${currentAlt}m`, pad, pad * 12);
+        ctx.shadowBlur = 0;
+
+        // 下载图片
+        const link = document.createElement('a');
+        link.download = `screenshot-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showStatus('截图已保存', false);
+      }
+
+      // ================= 启动全部 =================
+      async function onStartClick() {
+        startBtn.disabled = true;
+        startBtn.innerText = '⏳ 启动中...';
+        // 1. 传感器
+        setupOrientationListener();
+        // 2. GPS
+        startGPS();
+        // 3. 摄像头
+        await startCamera(currentFacingMode);
+
+        // 隐藏启动按钮，显示工具栏
+        startBtn.classList.add('hidden');
+        toolbar.style.display = 'flex';
+        hintText.innerText = '摄像头、角度、GPS已启动';
+        startBtn.disabled = false; // 备用
+      }
+
+      // 绑定事件
+      startBtn.addEventListener('click', onStartClick);
+
+      // 切换摄像头
+      switchCamBtn.addEventListener('click', switchCamera);
+
+      // 缩放滑块
+      zoomSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value).toFixed(1);
+        zoomValue.innerText = val + 'x';
+        setZoom(val);
+      });
+
+      // 截屏
+      screenshotBtn.addEventListener('click', takeScreenshot);
+
+      // 如果非iOS，可以预先监听传感器，摄像头仍需按钮
+      if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) {
+        window.addEventListener('deviceorientation', handleOrientation);
+        orientationListenerActive = true;
+        hintText.innerText = '传感器已自动监听，点击下方启动摄像头和GPS';
+      }
+
+      // 页面卸载时清理
+      window.addEventListener('beforeunload', () => {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (deviceOrientationHandler) {
+          window.removeEventListener('deviceorientation', deviceOrientationHandler);
+        }
+        if (gpsWatchId !== null) {
+          navigator.geolocation.clearWatch(gpsWatchId);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
