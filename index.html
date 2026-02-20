@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>增强版：俯角/指南针/准心/GPS/切换/放大/截屏</title>
+  <title>专业增强版：十字/全摄像头/数字变焦/全屏</title>
   <style>
     * {
       margin: 0;
@@ -15,21 +15,32 @@
     body {
       background: #000;
       overflow: hidden;
-      font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+      font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
       height: 100vh;
       width: 100vw;
       position: fixed;
       touch-action: none;
     }
-    #video {
+    /* 视频容器：用于数字变焦裁剪 */
+    #video-container {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      overflow: hidden;
       z-index: 1;
-      pointer-events: none;
+      background: black;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform-origin: center center;
+      transition: transform 0.1s ease;
     }
     .overlay {
       position: absolute;
@@ -40,87 +51,86 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* 左上信息面板：角度 + GPS */
+    /* 信息面板 (左上) */
     .info-panel {
       position: absolute;
-      top: 16px;
-      left: 16px;
+      top: 12px;
+      left: 12px;
       background: rgba(0, 0, 0, 0.6);
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
       color: white;
-      padding: 14px 20px;
-      border-radius: 28px;
-      font-size: 15px;
+      padding: 10px 14px;
+      border-radius: 20px;
+      font-size: 13px;
       border: 1px solid rgba(255,255,255,0.15);
-      box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
       pointer-events: none;
       z-index: 20;
-      min-width: 210px;
-      line-height: 1.5;
+      min-width: 180px;
+      line-height: 1.4;
     }
     .info-row {
       display: flex;
       justify-content: space-between;
-      gap: 20px;
+      gap: 10px;
       white-space: nowrap;
     }
     .info-label {
       opacity: 0.7;
-      font-size: 13px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
     .info-value {
       font-family: 'Courier New', monospace;
       font-weight: 600;
       color: #ffd966;
-      text-shadow: 0 0 6px #ffb700;
-      font-size: 18px;
+      text-shadow: 0 0 4px #ffb700;
+      font-size: 15px;
     }
     .info-unit {
-      font-size: 12px;
+      font-size: 10px;
       color: #ccc;
       margin-left: 2px;
     }
     .divider {
       height: 1px;
       background: rgba(255,255,255,0.2);
-      margin: 8px 0;
+      margin: 6px 0;
     }
-    /* 十字准心 (更细) */
+
+    /* 十字准心 (超细，无阴影) */
     .crosshair {
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 80px;
-      height: 80px;
+      width: 70px;
+      height: 70px;
       z-index: 30;
       pointer-events: none;
+      /* 确保始终在图像中央 (相对于页面中央 = 视频中央) */
     }
     .crosshair-h {
       position: absolute;
       top: 50%;
       left: 0;
       width: 100%;
-      height: 1.5px; /* 细一点 */
+      height: 1px; /* 更细 */
       background: white;
       transform: translateY(-50%);
-      border-radius: 2px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3);
+      box-shadow: none; /* 去除阴影 */
       opacity: 0.95;
     }
     .crosshair-v {
       position: absolute;
       top: 0;
       left: 50%;
-      width: 1.5px; /* 细一点 */
+      width: 1px; /* 更细 */
       height: 100%;
       background: white;
       transform: translateX(-50%);
-      border-radius: 2px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,0,0,0.3);
+      box-shadow: none; /* 去除阴影 */
       opacity: 0.95;
     }
     .crosshair-circle {
@@ -128,65 +138,80 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 30px;
-      height: 30px;
-      border: 1.5px solid rgba(255,255,255,0.9);
+      width: 26px;
+      height: 26px;
+      border: 1px solid rgba(255,255,255,0.9); /* 细边 */
       border-radius: 50%;
-      box-shadow: 0 0 12px rgba(0,0,0,0.6);
+      box-shadow: none; /* 无阴影 */
       pointer-events: none;
     }
 
-    /* 底部工具栏 (可点击) */
+    /* 底部工具栏 (缩小按钮) */
     .toolbar {
       position: absolute;
-      bottom: 30px;
+      bottom: 16px;
       left: 0;
       width: 100%;
       display: flex;
+      flex-wrap: wrap;
       justify-content: center;
-      gap: 20px;
-      padding: 12px 20px;
+      gap: 8px;
+      padding: 8px 12px;
       z-index: 100;
-      pointer-events: none; /* 容器不拦截，内部按钮可点 */
+      pointer-events: none;
     }
-    .toolbar button, .zoom-container {
+    .toolbar button, .toolbar select, .zoom-container {
       pointer-events: auto;
       background: rgba(30, 30, 40, 0.8);
       backdrop-filter: blur(6px);
       -webkit-backdrop-filter: blur(6px);
       border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 40px;
+      border-radius: 30px;
       color: white;
-      font-size: 16px;
-      padding: 12px 22px;
+      font-size: 13px; /* 缩小 */
+      padding: 8px 14px; /* 缩小 */
       font-weight: 500;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       transition: 0.1s;
-      min-width: 60px;
+      min-width: 44px;
       text-align: center;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
+      height: 38px; /* 固定高度 */
+      line-height: 1;
     }
-    .toolbar button:active {
+    .toolbar select {
+      padding: 8px 10px;
+      background: rgba(20, 20, 30, 0.9);
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 24px;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+    .toolbar button:active, .toolbar select:active {
       transform: scale(0.94);
       background: rgba(80, 80, 120, 0.8);
     }
     .zoom-container {
-      padding: 8px 18px;
-      gap: 8px;
+      padding: 4px 10px;
+      gap: 6px;
       display: flex;
       align-items: center;
+      height: 38px;
     }
     .zoom-container span {
       color: #ffd966;
       font-weight: 600;
-      min-width: 45px;
+      min-width: 38px;
       text-align: center;
+      font-size: 13px;
     }
     .zoom-container input[type=range] {
-      width: 130px;
-      height: 5px;
+      width: 100px;
+      height: 4px;
       -webkit-appearance: none;
       background: rgba(255,255,255,0.3);
       border-radius: 10px;
@@ -194,33 +219,34 @@
     }
     .zoom-container input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 22px;
-      height: 22px;
+      width: 18px;
+      height: 18px;
       background: white;
       border-radius: 50%;
-      box-shadow: 0 0 10px #ffd966;
+      box-shadow: 0 0 6px #ffd966;
       border: 2px solid #ffb700;
       cursor: pointer;
     }
-    /* 启动按钮 (初始可见) */
+
+    /* 启动按钮 (缩小) */
     #startBtn {
       position: absolute;
-      bottom: 40px;
+      bottom: 30px;
       left: 50%;
       transform: translateX(-50%);
       background: #ffd966;
       border: none;
-      padding: 16px 36px;
-      border-radius: 50px;
-      font-size: 18px;
+      padding: 12px 28px; /* 缩小 */
+      border-radius: 40px;
+      font-size: 16px;
       font-weight: 600;
       color: #1a1a2e;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.3);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.3);
       z-index: 200;
       pointer-events: auto;
       transition: 0.2s;
       border: 1px solid rgba(255,255,255,0.5);
-      letter-spacing: 1px;
+      letter-spacing: 0.5px;
     }
     #startBtn:active {
       transform: translateX(-50%) scale(0.95);
@@ -229,16 +255,16 @@
     #startBtn.hidden {
       display: none;
     }
-    /* 提示与状态 */
+
     .status-message {
       position: absolute;
-      top: 130px;
-      right: 20px;
+      top: 100px;
+      right: 12px;
       background: rgba(220, 20, 60, 0.85);
       color: white;
-      padding: 8px 16px;
-      border-radius: 30px;
-      font-size: 14px;
+      padding: 6px 14px;
+      border-radius: 24px;
+      font-size: 12px;
       z-index: 250;
       pointer-events: none;
       backdrop-filter: blur(4px);
@@ -247,23 +273,26 @@
     }
     .hint-tip {
       position: absolute;
-      bottom: 110px;
+      bottom: 90px;
       left: 0;
       width: 100%;
       text-align: center;
-      color: rgba(255,255,255,0.6);
-      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      font-size: 12px;
       z-index: 90;
       pointer-events: none;
-      text-shadow: 0 2px 6px black;
+      text-shadow: 0 2px 4px black;
     }
   </style>
 </head>
 <body>
-  <video id="video" autoplay playsinline muted></video>
+  <!-- 视频容器 (用于数字变焦裁剪) -->
+  <div id="video-container">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
 
   <div class="overlay">
-    <!-- 综合信息面板 (角度+GPS) -->
+    <!-- 信息面板 -->
     <div class="info-panel">
       <div class="info-row">
         <span class="info-label">🧭 指南针</span>
@@ -288,28 +317,31 @@
       </div>
     </div>
 
-    <!-- 中央十字准心 (已变细) -->
+    <!-- 中央十字准心 (无阴影、超细) -->
     <div class="crosshair">
       <div class="crosshair-h"></div>
       <div class="crosshair-v"></div>
       <div class="crosshair-circle"></div>
     </div>
 
-    <!-- 底部工具栏 (初始隐藏，启动后显示) -->
+    <!-- 底部工具栏 (初始隐藏) -->
     <div class="toolbar" id="toolbar" style="display: none;">
-      <button id="switchCamBtn" title="切换摄像头">🔄 前后</button>
+      <select id="cameraSelect" title="选择摄像头">
+        <option value="">📷 加载设备中...</option>
+      </select>
+      <button id="focusBtn" title="中心自动对焦">⏃ AF</button>
       <div class="zoom-container">
         <span id="zoomValue">1.0x</span>
-        <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1" disabled>
+        <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
       </div>
-      <button id="screenshotBtn" title="保存截图">📸 截屏</button>
+      <button id="screenshotBtn" title="保存截图">📸</button>
+      <button id="fullscreenBtn" title="全屏模式">⛶</button>
     </div>
 
     <!-- 启动按钮 -->
     <button id="startBtn">▶ 启动相机 & 传感器</button>
     <div class="hint-tip" id="hintText">点击按钮获取摄像头、角度和GPS</div>
 
-    <!-- 状态浮窗 -->
     <div class="status-message" id="statusMsg"></div>
   </div>
 
@@ -317,6 +349,7 @@
     (function() {
       // DOM 元素
       const video = document.getElementById('video');
+      const videoContainer = document.getElementById('video-container');
       const startBtn = document.getElementById('startBtn');
       const toolbar = document.getElementById('toolbar');
       const headingSpan = document.getElementById('headingValue');
@@ -326,10 +359,12 @@
       const altSpan = document.getElementById('altValue');
       const statusMsg = document.getElementById('statusMsg');
       const hintText = document.getElementById('hintText');
-      const switchCamBtn = document.getElementById('switchCamBtn');
+      const cameraSelect = document.getElementById('cameraSelect');
+      const focusBtn = document.getElementById('focusBtn');
       const zoomSlider = document.getElementById('zoomSlider');
       const zoomValue = document.getElementById('zoomValue');
       const screenshotBtn = document.getElementById('screenshotBtn');
+      const fullscreenBtn = document.getElementById('fullscreenBtn');
 
       // 状态变量
       let currentHeading = '---';
@@ -341,10 +376,13 @@
       let orientationListenerActive = false;
       let gpsWatchId = null;
       let deviceOrientationHandler = null;
-      let currentFacingMode = 'environment'; // 默认后置
       let currentStream = null;
-      let zoomSupported = false;
-      let zoomMin = 1, zoomMax = 5; // 默认值
+      let videoDevices = [];           // 存储所有视频输入设备
+      let currentDeviceId = null;       // 当前使用的设备ID
+      let zoomSupported = false;        // 硬件zoom是否支持
+      let zoomMin = 1, zoomMax = 5;
+      let useDigitalZoom = false;       // 是否使用数字变焦（软件缩放）
+      let digitalZoomLevel = 1.0;       
 
       // 显示临时状态
       function showStatus(text, isError = true) {
@@ -400,9 +438,7 @@
                 hintText.innerText = '指南针权限被拒绝';
               }
             })
-            .catch(err => {
-              console.warn('传感器权限请求失败', err);
-            });
+            .catch(err => console.warn('传感器权限请求失败', err));
         } else {
           window.addEventListener('deviceorientation', deviceOrientationHandler);
           orientationListenerActive = true;
@@ -440,15 +476,35 @@
         );
       }
 
-      // ================= 摄像头管理 =================
-      async function startCamera(facingMode = currentFacingMode) {
+      // ================= 枚举摄像头并更新下拉 =================
+      async function enumerateCameras() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+          cameraSelect.innerHTML = '<option value="">无摄像头</option>';
+          return;
+        }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = devices.filter(d => d.kind === 'videoinput');
+        if (videoDevices.length === 0) {
+          cameraSelect.innerHTML = '<option value="">无摄像头</option>';
+          return;
+        }
+        let options = '';
+        videoDevices.forEach((device, index) => {
+          const label = device.label || `摄像头 ${index + 1}`;
+          options += `<option value="${device.deviceId}" ${device.deviceId === currentDeviceId ? 'selected' : ''}>${label}</option>`;
+        });
+        cameraSelect.innerHTML = options;
+      }
+
+      // ================= 摄像头管理 (通过deviceId精确切换) =================
+      async function startCamera(deviceId) {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
         }
         try {
           const constraints = {
             video: {
-              facingMode: { ideal: facingMode },
+              deviceId: deviceId ? { exact: deviceId } : undefined,
               width: { ideal: 1920 },
               height: { ideal: 1080 }
             },
@@ -460,19 +516,24 @@
           streamActive = true;
           await video.play();
 
-          // 获取zoom能力并更新滑块
+          // 更新当前deviceId
           const track = stream.getVideoTracks()[0];
-          const capabilities = track.getCapabilities && track.getCapabilities();
-          const settings = track.getSettings && track.getSettings();
+          const settings = track.getSettings();
+          if (settings && settings.deviceId) {
+            currentDeviceId = settings.deviceId;
+          }
+
+          // 尝试获取zoom能力
+          const capabilities = track.getCapabilities ? track.getCapabilities() : null;
           if (capabilities && capabilities.zoom) {
             zoomSupported = true;
+            useDigitalZoom = false;
             zoomMin = capabilities.zoom.min || 1;
             zoomMax = capabilities.zoom.max || 5;
             zoomSlider.min = zoomMin;
             zoomSlider.max = zoomMax;
             zoomSlider.step = capabilities.zoom.step || 0.1;
             zoomSlider.disabled = false;
-            // 设置当前zoom值
             if (settings && settings.zoom) {
               zoomSlider.value = settings.zoom;
               zoomValue.innerText = settings.zoom.toFixed(1) + 'x';
@@ -480,37 +541,78 @@
               zoomSlider.value = zoomMin;
               zoomValue.innerText = zoomMin + 'x';
             }
+            // 确保数字变焦恢复为1
+            video.style.transform = 'scale(1)';
           } else {
             zoomSupported = false;
-            zoomSlider.disabled = true;
-            zoomValue.innerText = '不支持';
+            useDigitalZoom = true;  // 启用数字变焦
+            zoomSlider.min = 1;
+            zoomSlider.max = 5;
+            zoomSlider.step = 0.1;
+            zoomSlider.disabled = false;
+            zoomSlider.value = digitalZoomLevel;
+            zoomValue.innerText = digitalZoomLevel.toFixed(1) + 'x';
+            // 应用数字缩放
+            applyDigitalZoom(digitalZoomLevel);
           }
+
+          // 枚举摄像头更新下拉 (获取label后)
+          await enumerateCameras();
 
           showStatus('摄像头已开启', false);
         } catch (err) {
           console.error('摄像头错误:', err);
           let errorMsg = '无法访问摄像头';
           if (err.name === 'NotAllowedError') errorMsg = '摄像头权限被拒绝';
-          else if (err.name === 'NotFoundError') errorMsg = '未找到摄像头';
+          else if (err.name === 'NotFoundError') errorMsg = '未找到指定摄像头';
           else if (err.name === 'NotReadableError') errorMsg = '摄像头被占用';
           showStatus(errorMsg, true);
         }
       }
 
-      // 切换前后摄像头
-      async function switchCamera() {
-        currentFacingMode = (currentFacingMode === 'environment' ? 'user' : 'environment');
-        await startCamera(currentFacingMode);
+      // 应用数字变焦 (缩放视频元素)
+      function applyDigitalZoom(level) {
+        if (!useDigitalZoom) return;
+        digitalZoomLevel = Math.min(5, Math.max(1, level));
+        video.style.transform = `scale(${digitalZoomLevel})`;
+        zoomValue.innerText = digitalZoomLevel.toFixed(1) + 'x';
       }
 
-      // 设置zoom
-      function setZoom(zoomLevel) {
-        if (!currentStream || !zoomSupported) return;
+      // 设置光学/数字变焦
+      function setZoom(level) {
+        if (!currentStream) return;
+        if (zoomSupported) {
+          const track = currentStream.getVideoTracks()[0];
+          if (track && track.applyConstraints) {
+            track.applyConstraints({
+              advanced: [{ zoom: parseFloat(level) }]
+            }).catch(e => console.warn('光学变焦失败', e));
+          }
+        } else if (useDigitalZoom) {
+          applyDigitalZoom(parseFloat(level));
+        }
+      }
+
+      // ================= 中心自动对焦 (尝试设置对焦模式) =================
+      async function triggerAutoFocus() {
+        if (!currentStream) return;
         const track = currentStream.getVideoTracks()[0];
-        if (track && track.applyConstraints) {
-          track.applyConstraints({
-            advanced: [{ zoom: parseFloat(zoomLevel) }]
-          }).catch(e => console.warn('zoom失败', e));
+        if (!track) return;
+        const capabilities = track.getCapabilities ? track.getCapabilities() : null;
+        if (!capabilities) {
+          showStatus('设备不支持对焦控制', true);
+          return;
+        }
+        // 尝试设置连续自动对焦
+        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+          try {
+            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+            showStatus('连续自动对焦已启用', false);
+          } catch (e) {
+            showStatus('对焦设置失败', true);
+          }
+        } else {
+          showStatus('不支持连续对焦', true);
         }
       }
 
@@ -524,47 +626,55 @@
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
-        // 绘制视频帧
+        // 绘制视频帧 (考虑数字变焦偏移？由于缩放是CSS，实际视频帧未变，直接绘制)
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         // 绘制十字准心 (中心)
         ctx.beginPath();
         ctx.strokeStyle = 'white';
-        ctx.lineWidth = canvas.width / 200; // 动态细线
-        ctx.shadowColor = 'black';
-        ctx.shadowBlur = 10;
+        ctx.lineWidth = canvas.width / 300; // 动态细线
+        ctx.shadowColor = 'transparent';
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
-        const size = Math.min(canvas.width, canvas.height) * 0.1; // 准心大小 10%
+        const size = Math.min(canvas.width, canvas.height) * 0.1;
         ctx.moveTo(cx - size, cy);
         ctx.lineTo(cx + size, cy);
         ctx.moveTo(cx, cy - size);
         ctx.lineTo(cx, cy + size);
         ctx.stroke();
-        // 绘制小圆圈
         ctx.beginPath();
         ctx.arc(cx, cy, size * 0.4, 0, 2 * Math.PI);
         ctx.strokeStyle = 'white';
-        ctx.lineWidth = canvas.width / 300;
+        ctx.lineWidth = canvas.width / 400;
         ctx.stroke();
-        ctx.shadowBlur = 0;
-        // 绘制角度/GPS信息 (左上角)
-        ctx.font = `bold ${canvas.width/30}px 'Courier New', monospace`;
+
+        // 绘制信息
+        ctx.font = `bold ${canvas.width/35}px 'Courier New', monospace`;
         ctx.fillStyle = '#ffd966';
         ctx.shadowColor = '#000';
-        ctx.shadowBlur = 8;
-        const pad = canvas.width / 40;
-        ctx.fillText(`🧭 ${currentHeading}°`, pad, pad * 3);
-        ctx.fillText(`📐 ${currentPitch}°`, pad, pad * 6);
-        ctx.fillText(`🛰️ ${currentLat}, ${currentLon}`, pad, pad * 9);
-        ctx.fillText(`⬆️ ${currentAlt}m`, pad, pad * 12);
+        ctx.shadowBlur = 6;
+        const pad = canvas.width / 35;
+        ctx.fillText(`🧙 ${currentHeading}°`, pad, pad*2);
+        ctx.fillText(`📐 ${currentPitch}°`, pad, pad*4);
+        ctx.fillText(`📍 ${currentLat}, ${currentLon}`, pad, pad*6);
+        ctx.fillText(`⬆️ ${currentAlt}m`, pad, pad*8);
         ctx.shadowBlur = 0;
 
-        // 下载图片
         const link = document.createElement('a');
         link.download = `screenshot-${Date.now()}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
         showStatus('截图已保存', false);
+      }
+
+      // ================= 全屏 =================
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen();
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        }
       }
 
       // ================= 启动全部 =================
@@ -575,40 +685,67 @@
         setupOrientationListener();
         // 2. GPS
         startGPS();
-        // 3. 摄像头
-        await startCamera(currentFacingMode);
+        // 3. 摄像头 (先默认environment，如果没有指定，先枚举)
+        try {
+          // 先请求一次权限以获取设备列表
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          tempStream.getTracks().forEach(t => t.stop()); // 立即释放
+          await enumerateCameras();
+          // 选择第一个后置摄像头(如果有)
+          const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('后置'));
+          const selectedDeviceId = backCamera ? backCamera.deviceId : (videoDevices[0] ? videoDevices[0].deviceId : null);
+          await startCamera(selectedDeviceId);
+        } catch (e) {
+          // 降级启动
+          await startCamera(null);
+        }
 
         // 隐藏启动按钮，显示工具栏
         startBtn.classList.add('hidden');
         toolbar.style.display = 'flex';
         hintText.innerText = '摄像头、角度、GPS已启动';
-        startBtn.disabled = false; // 备用
+        startBtn.disabled = false;
       }
 
-      // 绑定事件
+      // 事件绑定
       startBtn.addEventListener('click', onStartClick);
 
       // 切换摄像头
-      switchCamBtn.addEventListener('click', switchCamera);
+      cameraSelect.addEventListener('change', (e) => {
+        const deviceId = e.target.value;
+        if (deviceId) {
+          startCamera(deviceId);
+        }
+      });
+
+      // 自动对焦
+      focusBtn.addEventListener('click', triggerAutoFocus);
 
       // 缩放滑块
       zoomSlider.addEventListener('input', (e) => {
-        const val = parseFloat(e.target.value).toFixed(1);
-        zoomValue.innerText = val + 'x';
+        const val = parseFloat(e.target.value);
         setZoom(val);
+        if (zoomSupported) {
+          zoomValue.innerText = val.toFixed(1) + 'x';
+        } else {
+          // 数字变焦已在setZoom中通过applyDigitalZoom更新显示
+        }
       });
 
       // 截屏
       screenshotBtn.addEventListener('click', takeScreenshot);
 
-      // 如果非iOS，可以预先监听传感器，摄像头仍需按钮
+      // 全屏
+      fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+      // 如果非iOS，可以预先监听传感器
       if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) {
         window.addEventListener('deviceorientation', handleOrientation);
         orientationListenerActive = true;
         hintText.innerText = '传感器已自动监听，点击下方启动摄像头和GPS';
       }
 
-      // 页面卸载时清理
+      // 清理
       window.addEventListener('beforeunload', () => {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
