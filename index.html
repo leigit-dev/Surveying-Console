@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>专业增强版：十字/全摄像头/数字变焦/全屏</title>
+  <title>终极相机：水平仪/曝光/最高分辨率/中心对焦</title>
   <style>
     * {
       margin: 0;
@@ -21,7 +21,6 @@
       position: fixed;
       touch-action: none;
     }
-    /* 视频容器：用于数字变焦裁剪 */
     #video-container {
       position: absolute;
       top: 0;
@@ -51,7 +50,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* 信息面板 (左上) */
+    /* 信息面板 (左上) - 增加分辨率行 */
     .info-panel {
       position: absolute;
       top: 12px;
@@ -99,6 +98,23 @@
       margin: 6px 0;
     }
 
+    /* 水平仪 Canvas (右上) */
+    #level-canvas {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border: 2px solid rgba(255,255,255,0.3);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      z-index: 35;
+      pointer-events: none;
+    }
+
     /* 十字准心 (超细，无阴影) */
     .crosshair {
       position: absolute;
@@ -109,28 +125,27 @@
       height: 70px;
       z-index: 30;
       pointer-events: none;
-      /* 确保始终在图像中央 (相对于页面中央 = 视频中央) */
     }
     .crosshair-h {
       position: absolute;
       top: 50%;
       left: 0;
       width: 100%;
-      height: 1px; /* 更细 */
+      height: 1px;
       background: white;
       transform: translateY(-50%);
-      box-shadow: none; /* 去除阴影 */
+      box-shadow: none;
       opacity: 0.95;
     }
     .crosshair-v {
       position: absolute;
       top: 0;
       left: 50%;
-      width: 1px; /* 更细 */
+      width: 1px;
       height: 100%;
       background: white;
       transform: translateX(-50%);
-      box-shadow: none; /* 去除阴影 */
+      box-shadow: none;
       opacity: 0.95;
     }
     .crosshair-circle {
@@ -140,9 +155,9 @@
       transform: translate(-50%, -50%);
       width: 26px;
       height: 26px;
-      border: 1px solid rgba(255,255,255,0.9); /* 细边 */
+      border: 1px solid rgba(255,255,255,0.9);
       border-radius: 50%;
-      box-shadow: none; /* 无阴影 */
+      box-shadow: none;
       pointer-events: none;
     }
 
@@ -160,7 +175,7 @@
       z-index: 100;
       pointer-events: none;
     }
-    .toolbar button, .toolbar select, .zoom-container {
+    .toolbar button, .toolbar select, .zoom-container, .exposure-container {
       pointer-events: auto;
       background: rgba(30, 30, 40, 0.8);
       backdrop-filter: blur(6px);
@@ -168,8 +183,8 @@
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 30px;
       color: white;
-      font-size: 13px; /* 缩小 */
-      padding: 8px 14px; /* 缩小 */
+      font-size: 13px;
+      padding: 8px 14px;
       font-weight: 500;
       box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       transition: 0.1s;
@@ -178,7 +193,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      height: 38px; /* 固定高度 */
+      height: 38px;
       line-height: 1;
     }
     .toolbar select {
@@ -195,21 +210,21 @@
       transform: scale(0.94);
       background: rgba(80, 80, 120, 0.8);
     }
-    .zoom-container {
+    .zoom-container, .exposure-container {
       padding: 4px 10px;
       gap: 6px;
       display: flex;
       align-items: center;
       height: 38px;
     }
-    .zoom-container span {
+    .zoom-container span, .exposure-container span {
       color: #ffd966;
       font-weight: 600;
       min-width: 38px;
       text-align: center;
       font-size: 13px;
     }
-    .zoom-container input[type=range] {
+    .zoom-container input[type=range], .exposure-container input[type=range] {
       width: 100px;
       height: 4px;
       -webkit-appearance: none;
@@ -217,7 +232,7 @@
       border-radius: 10px;
       outline: none;
     }
-    .zoom-container input[type=range]::-webkit-slider-thumb {
+    .zoom-container input[type=range]::-webkit-slider-thumb, .exposure-container input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
       width: 18px;
       height: 18px;
@@ -228,7 +243,7 @@
       cursor: pointer;
     }
 
-    /* 启动按钮 (缩小) */
+    /* 启动按钮 */
     #startBtn {
       position: absolute;
       bottom: 30px;
@@ -236,7 +251,7 @@
       transform: translateX(-50%);
       background: #ffd966;
       border: none;
-      padding: 12px 28px; /* 缩小 */
+      padding: 12px 28px;
       border-radius: 40px;
       font-size: 16px;
       font-weight: 600;
@@ -286,13 +301,12 @@
   </style>
 </head>
 <body>
-  <!-- 视频容器 (用于数字变焦裁剪) -->
   <div id="video-container">
     <video id="video" autoplay playsinline muted></video>
   </div>
 
   <div class="overlay">
-    <!-- 信息面板 -->
+    <!-- 信息面板 (增加分辨率行) -->
     <div class="info-panel">
       <div class="info-row">
         <span class="info-label">🧭 指南针</span>
@@ -315,24 +329,36 @@
         <span class="info-label">⬆️ 海拔</span>
         <span class="info-value" id="altValue">---</span><span class="info-unit">m</span>
       </div>
+      <div class="divider"></div>
+      <div class="info-row">
+        <span class="info-label">📺 分辨率</span>
+        <span class="info-value" id="resolutionValue">---</span>
+      </div>
     </div>
 
-    <!-- 中央十字准心 (无阴影、超细) -->
+    <!-- 水平仪 Canvas -->
+    <canvas id="level-canvas" width="90" height="90"></canvas>
+
+    <!-- 十字准心 -->
     <div class="crosshair">
       <div class="crosshair-h"></div>
       <div class="crosshair-v"></div>
       <div class="crosshair-circle"></div>
     </div>
 
-    <!-- 底部工具栏 (初始隐藏) -->
+    <!-- 底部工具栏 (增加曝光滑块) -->
     <div class="toolbar" id="toolbar" style="display: none;">
       <select id="cameraSelect" title="选择摄像头">
         <option value="">📷 加载设备中...</option>
       </select>
-      <button id="focusBtn" title="中心自动对焦">⏃ AF</button>
+      <button id="focusBtn" title="中心自动对焦">⏃ 对焦</button>
       <div class="zoom-container">
         <span id="zoomValue">1.0x</span>
         <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
+      </div>
+      <div class="exposure-container">
+        <span id="expValue">0.0EV</span>
+        <input type="range" id="expSlider" min="-3" max="3" step="0.1" value="0">
       </div>
       <button id="screenshotBtn" title="保存截图">📸</button>
       <button id="fullscreenBtn" title="全屏模式">⛶</button>
@@ -357,18 +383,24 @@
       const latSpan = document.getElementById('latValue');
       const lonSpan = document.getElementById('lonValue');
       const altSpan = document.getElementById('altValue');
+      const resolutionSpan = document.getElementById('resolutionValue');
       const statusMsg = document.getElementById('statusMsg');
       const hintText = document.getElementById('hintText');
       const cameraSelect = document.getElementById('cameraSelect');
       const focusBtn = document.getElementById('focusBtn');
       const zoomSlider = document.getElementById('zoomSlider');
       const zoomValue = document.getElementById('zoomValue');
+      const expSlider = document.getElementById('expSlider');
+      const expValue = document.getElementById('expValue');
       const screenshotBtn = document.getElementById('screenshotBtn');
       const fullscreenBtn = document.getElementById('fullscreenBtn');
+      const levelCanvas = document.getElementById('level-canvas');
+      const ctx = levelCanvas.getContext('2d');
 
       // 状态变量
       let currentHeading = '---';
-      let currentPitch = '---';
+      let currentPitch = '---';   // beta  (俯仰)
+      let currentRoll = '---';     // gamma (横滚)
       let currentLat = '---';
       let currentLon = '---';
       let currentAlt = '---';
@@ -376,13 +408,37 @@
       let orientationListenerActive = false;
       let gpsWatchId = null;
       let deviceOrientationHandler = null;
+      let videoDevices = [];
+      let currentDeviceId = null;
       let currentStream = null;
-      let videoDevices = [];           // 存储所有视频输入设备
-      let currentDeviceId = null;       // 当前使用的设备ID
-      let zoomSupported = false;        // 硬件zoom是否支持
+      let zoomSupported = false;
       let zoomMin = 1, zoomMax = 5;
-      let useDigitalZoom = false;       // 是否使用数字变焦（软件缩放）
-      let digitalZoomLevel = 1.0;       
+      let useDigitalZoom = false;
+      let digitalZoomLevel = 1.0;
+      let exposureSupported = false;
+      let exposureMin = -3, exposureMax = 3, exposureStep = 0.1;
+      let currentExposure = 0;
+
+      // 屏幕方向 (用于横屏交换)
+      let screenOrientation = 0; // 0, 90, 180, 270
+
+      // 更新所有显示 (包括分辨率)
+      function updateDisplays() {
+        headingSpan.innerText = currentHeading;
+        pitchSpan.innerText = currentPitch;
+        latSpan.innerText = currentLat;
+        lonSpan.innerText = currentLon;
+        altSpan.innerText = currentAlt;
+        if (currentStream) {
+          const track = currentStream.getVideoTracks()[0];
+          if (track) {
+            const settings = track.getSettings();
+            if (settings && settings.width && settings.height) {
+              resolutionSpan.innerText = `${settings.width} x ${settings.height}`;
+            }
+          }
+        }
+      }
 
       // 显示临时状态
       function showStatus(text, isError = true) {
@@ -394,19 +450,12 @@
         }, 3000);
       }
 
-      // 更新所有显示
-      function updateDisplays() {
-        headingSpan.innerText = currentHeading;
-        pitchSpan.innerText = currentPitch;
-        latSpan.innerText = currentLat;
-        lonSpan.innerText = currentLon;
-        altSpan.innerText = currentAlt;
-      }
-
-      // ================= 传感器：指南针 & 俯仰角 =================
+      // ================= 传感器：指南针 & 俯仰/横滚 =================
       function handleOrientation(event) {
         let heading = event.alpha;
-        let pitch = event.beta;
+        let pitch = event.beta;   // 前后倾斜 -180~180
+        let roll = event.gamma;   // 左右倾斜 -90~90
+
         if (heading !== null && !isNaN(heading)) {
           heading = (heading + 360) % 360;
           currentHeading = heading.toFixed(1);
@@ -418,8 +467,100 @@
         } else {
           currentPitch = '---';
         }
+        if (roll !== null && !isNaN(roll)) {
+          currentRoll = roll.toFixed(1);
+        } else {
+          currentRoll = '---';
+        }
+
+        // 更新水平仪绘制
+        drawLevel(pitch, roll);
         updateDisplays();
       }
+
+      // 绘制水平仪 (一圆两线 + 气泡)
+      function drawLevel(beta, gamma) {
+        if (beta === '---' || gamma === '---') {
+          // 无数据时画灰色
+          ctx.clearRect(0, 0, 90, 90);
+          ctx.beginPath();
+          ctx.arc(45, 45, 40, 0, 2 * Math.PI);
+          ctx.strokeStyle = '#aaa';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          return;
+        }
+
+        // 根据屏幕方向交换 beta 和 gamma
+        let dispBeta = beta;
+        let dispGamma = gamma;
+        // screenOrientation: 0 竖屏, 90 横屏(顺时针旋转), -90/270 横屏(逆时针)
+        const angle = screenOrientation;
+        if (Math.abs(angle) === 90 || angle === 270) {
+          // 横屏模式，交换并取反使得水平仪方向符合直觉
+          // 通常我们希望横屏时水平仪的水平线对应手机长边水平
+          // 这里简单交换：左右倾斜（gamma）变为前后（beta），反之亦然，并根据旋转方向调整符号
+          if (angle === 90) {
+            dispBeta = gamma;      // 旋转90度：原来左右变成前后
+            dispGamma = -beta;     // 原来前后变成左右，符号取反
+          } else if (angle === -90 || angle === 270) {
+            dispBeta = -gamma;
+            dispGamma = beta;
+          }
+        }
+
+        // 限制显示范围（避免超出圆）
+        const maxOffset = 30; // 最大偏移像素
+        const offsetX = (dispGamma / 90) * maxOffset;  // gamma 范围 -90~90
+        const offsetY = (dispBeta / 180) * maxOffset;  // beta 范围 -180~180，但通常前后倾斜不会太大，限制一下
+        // 限幅
+        const ballX = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetX));
+        const ballY = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetY));
+
+        // 绘制背景圆
+        ctx.clearRect(0, 0, 90, 90);
+        ctx.beginPath();
+        ctx.arc(45, 45, 40, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 绘制十字参考线 (中心两条线)
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1;
+        ctx.moveTo(45, 15);
+        ctx.lineTo(45, 75);
+        ctx.stroke();
+        ctx.moveTo(15, 45);
+        ctx.lineTo(75, 45);
+        ctx.stroke();
+
+        // 绘制气泡 (小圆)
+        ctx.beginPath();
+        ctx.arc(ballX, ballY, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = '#ffd966';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 4;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // 监听屏幕方向变化
+      function updateOrientation() {
+        if (screen.orientation) {
+          screenOrientation = screen.orientation.angle;
+        } else if (window.orientation !== undefined) {
+          screenOrientation = window.orientation;
+        }
+        // 重新绘制水平仪 (使用最近的角度)
+        if (currentPitch !== '---' && currentRoll !== '---') {
+          drawLevel(parseFloat(currentPitch), parseFloat(currentRoll));
+        }
+      }
+      window.addEventListener('orientationchange', updateOrientation);
+      // 初始获取方向
+      updateOrientation();
 
       function setupOrientationListener() {
         if (deviceOrientationHandler) {
@@ -476,7 +617,7 @@
         );
       }
 
-      // ================= 枚举摄像头并更新下拉 =================
+      // ================= 枚举摄像头 =================
       async function enumerateCameras() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
           cameraSelect.innerHTML = '<option value="">无摄像头</option>';
@@ -496,17 +637,22 @@
         cameraSelect.innerHTML = options;
       }
 
-      // ================= 摄像头管理 (通过deviceId精确切换) =================
+      // ================= 摄像头管理 (最高分辨率) =================
       async function startCamera(deviceId) {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
         }
         try {
+          // 设置理想值为很大，以获取最高分辨率
           const constraints = {
             video: {
               deviceId: deviceId ? { exact: deviceId } : undefined,
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
+              width: { ideal:  7296},
+              height: { ideal: 5472 },
+              advanced: [
+                { width: 3840, height: 2160 },
+                { width: 1920, height: 1080 }
+              ]
             },
             audio: false
           };
@@ -516,14 +662,13 @@
           streamActive = true;
           await video.play();
 
-          // 更新当前deviceId
           const track = stream.getVideoTracks()[0];
           const settings = track.getSettings();
           if (settings && settings.deviceId) {
             currentDeviceId = settings.deviceId;
           }
 
-          // 尝试获取zoom能力
+          // 检查 zoom 能力
           const capabilities = track.getCapabilities ? track.getCapabilities() : null;
           if (capabilities && capabilities.zoom) {
             zoomSupported = true;
@@ -541,24 +686,44 @@
               zoomSlider.value = zoomMin;
               zoomValue.innerText = zoomMin + 'x';
             }
-            // 确保数字变焦恢复为1
             video.style.transform = 'scale(1)';
           } else {
             zoomSupported = false;
-            useDigitalZoom = true;  // 启用数字变焦
+            useDigitalZoom = true;
             zoomSlider.min = 1;
             zoomSlider.max = 5;
             zoomSlider.step = 0.1;
             zoomSlider.disabled = false;
             zoomSlider.value = digitalZoomLevel;
             zoomValue.innerText = digitalZoomLevel.toFixed(1) + 'x';
-            // 应用数字缩放
             applyDigitalZoom(digitalZoomLevel);
           }
 
-          // 枚举摄像头更新下拉 (获取label后)
-          await enumerateCameras();
+          // 检查曝光补偿能力
+          if (capabilities && capabilities.exposureCompensation) {
+            exposureSupported = true;
+            exposureMin = capabilities.exposureCompensation.min || -3;
+            exposureMax = capabilities.exposureCompensation.max || 3;
+            exposureStep = capabilities.exposureCompensation.step || 0.1;
+            expSlider.min = exposureMin;
+            expSlider.max = exposureMax;
+            expSlider.step = exposureStep;
+            expSlider.disabled = false;
+            if (settings && settings.exposureCompensation !== undefined) {
+              expSlider.value = settings.exposureCompensation;
+              expValue.innerText = settings.exposureCompensation.toFixed(1) + 'EV';
+            } else {
+              expSlider.value = 0;
+              expValue.innerText = '0.0EV';
+            }
+          } else {
+            exposureSupported = false;
+            expSlider.disabled = true;
+            expValue.innerText = '不支持';
+          }
 
+          await enumerateCameras();
+          updateDisplays(); // 更新分辨率
           showStatus('摄像头已开启', false);
         } catch (err) {
           console.error('摄像头错误:', err);
@@ -570,7 +735,7 @@
         }
       }
 
-      // 应用数字变焦 (缩放视频元素)
+      // 应用数字变焦
       function applyDigitalZoom(level) {
         if (!useDigitalZoom) return;
         digitalZoomLevel = Math.min(5, Math.max(1, level));
@@ -593,7 +758,18 @@
         }
       }
 
-      // ================= 中心自动对焦 (尝试设置对焦模式) =================
+      // 设置曝光补偿
+      function setExposure(ev) {
+        if (!currentStream || !exposureSupported) return;
+        const track = currentStream.getVideoTracks()[0];
+        if (track && track.applyConstraints) {
+          track.applyConstraints({
+            advanced: [{ exposureCompensation: parseFloat(ev) }]
+          }).catch(e => console.warn('曝光补偿失败', e));
+        }
+      }
+
+      // ================= 触发式自动对焦 (中心) =================
       async function triggerAutoFocus() {
         if (!currentStream) return;
         const track = currentStream.getVideoTracks()[0];
@@ -603,16 +779,18 @@
           showStatus('设备不支持对焦控制', true);
           return;
         }
-        // 尝试设置连续自动对焦
-        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+        // 尝试触发单次自动对焦 (auto)
+        if (capabilities.focusMode && capabilities.focusMode.includes('auto')) {
           try {
-            await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-            showStatus('连续自动对焦已启用', false);
+            // 先设置为 auto，触发一次对焦
+            await track.applyConstraints({ advanced: [{ focusMode: 'auto' }] });
+            showStatus('自动对焦已触发', false);
+            // 可选：稍后重置为 continuous 如果支持，但保留 auto 也可以
           } catch (e) {
-            showStatus('对焦设置失败', true);
+            showStatus('对焦触发失败', true);
           }
         } else {
-          showStatus('不支持连续对焦', true);
+          showStatus('不支持自动对焦', true);
         }
       }
 
@@ -626,12 +804,11 @@
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
-        // 绘制视频帧 (考虑数字变焦偏移？由于缩放是CSS，实际视频帧未变，直接绘制)
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // 绘制十字准心 (中心)
+        // 绘制十字准心
         ctx.beginPath();
         ctx.strokeStyle = 'white';
-        ctx.lineWidth = canvas.width / 300; // 动态细线
+        ctx.lineWidth = canvas.width / 300;
         ctx.shadowColor = 'transparent';
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
@@ -671,9 +848,7 @@
         if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen();
         } else {
-          if (document.exitFullscreen) {
-            document.exitFullscreen();
-          }
+          document.exitFullscreen();
         }
       }
 
@@ -681,26 +856,21 @@
       async function onStartClick() {
         startBtn.disabled = true;
         startBtn.innerText = '⏳ 启动中...';
-        // 1. 传感器
         setupOrientationListener();
-        // 2. GPS
         startGPS();
-        // 3. 摄像头 (先默认environment，如果没有指定，先枚举)
         try {
           // 先请求一次权限以获取设备列表
           const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          tempStream.getTracks().forEach(t => t.stop()); // 立即释放
+          tempStream.getTracks().forEach(t => t.stop());
           await enumerateCameras();
-          // 选择第一个后置摄像头(如果有)
+          // 选择后置
           const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment') || d.label.toLowerCase().includes('后置'));
           const selectedDeviceId = backCamera ? backCamera.deviceId : (videoDevices[0] ? videoDevices[0].deviceId : null);
           await startCamera(selectedDeviceId);
         } catch (e) {
-          // 降级启动
           await startCamera(null);
         }
 
-        // 隐藏启动按钮，显示工具栏
         startBtn.classList.add('hidden');
         toolbar.style.display = 'flex';
         hintText.innerText = '摄像头、角度、GPS已启动';
@@ -710,35 +880,32 @@
       // 事件绑定
       startBtn.addEventListener('click', onStartClick);
 
-      // 切换摄像头
       cameraSelect.addEventListener('change', (e) => {
         const deviceId = e.target.value;
-        if (deviceId) {
-          startCamera(deviceId);
-        }
+        if (deviceId) startCamera(deviceId);
       });
 
-      // 自动对焦
       focusBtn.addEventListener('click', triggerAutoFocus);
 
-      // 缩放滑块
       zoomSlider.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         setZoom(val);
         if (zoomSupported) {
           zoomValue.innerText = val.toFixed(1) + 'x';
-        } else {
-          // 数字变焦已在setZoom中通过applyDigitalZoom更新显示
         }
       });
 
-      // 截屏
-      screenshotBtn.addEventListener('click', takeScreenshot);
+      expSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        currentExposure = val;
+        expValue.innerText = val.toFixed(1) + 'EV';
+        setExposure(val);
+      });
 
-      // 全屏
+      screenshotBtn.addEventListener('click', takeScreenshot);
       fullscreenBtn.addEventListener('click', toggleFullscreen);
 
-      // 如果非iOS，可以预先监听传感器
+      // 非iOS预监听传感器
       if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) {
         window.addEventListener('deviceorientation', handleOrientation);
         orientationListenerActive = true;
