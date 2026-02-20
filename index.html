@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>终极相机：水平仪/曝光/最高分辨率/中心对焦</title>
+  <title>终极相机：三轴/水平仪变色/全分辨率/横屏交换</title>
   <style>
     * {
       margin: 0;
@@ -50,7 +50,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* 信息面板 (左上) - 增加分辨率行 */
+    /* 信息面板 (左上) - 增加横滚行 */
     .info-panel {
       position: absolute;
       top: 12px;
@@ -306,7 +306,7 @@
   </div>
 
   <div class="overlay">
-    <!-- 信息面板 (增加分辨率行) -->
+    <!-- 信息面板 (增加横滚角行) -->
     <div class="info-panel">
       <div class="info-row">
         <span class="info-label">🧭 指南针</span>
@@ -315,6 +315,10 @@
       <div class="info-row">
         <span class="info-label">📐 俯仰角</span>
         <span class="info-value" id="pitchValue">---</span><span class="info-unit">°</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">🌀 横滚角</span>
+        <span class="info-value" id="rollValue">---</span><span class="info-unit">°</span>
       </div>
       <div class="divider"></div>
       <div class="info-row">
@@ -346,7 +350,7 @@
       <div class="crosshair-circle"></div>
     </div>
 
-    <!-- 底部工具栏 (增加曝光滑块) -->
+    <!-- 底部工具栏 -->
     <div class="toolbar" id="toolbar" style="display: none;">
       <select id="cameraSelect" title="选择摄像头">
         <option value="">📷 加载设备中...</option>
@@ -380,6 +384,7 @@
       const toolbar = document.getElementById('toolbar');
       const headingSpan = document.getElementById('headingValue');
       const pitchSpan = document.getElementById('pitchValue');
+      const rollSpan = document.getElementById('rollValue');
       const latSpan = document.getElementById('latValue');
       const lonSpan = document.getElementById('lonValue');
       const altSpan = document.getElementById('altValue');
@@ -398,9 +403,11 @@
       const ctx = levelCanvas.getContext('2d');
 
       // 状态变量
-      let currentHeading = '---';
-      let currentPitch = '---';   // beta  (俯仰)
-      let currentRoll = '---';     // gamma (横滚)
+      let currentAlpha = '---';   // 航向 (指南针)
+      let currentBeta = '---';    // 俯仰 (原始)
+      let currentGamma = '---';   // 横滚 (原始)
+      let displayPitch = '---';   // 经过横屏交换后显示的俯仰
+      let displayRoll = '---';    // 经过横屏交换后显示的横滚
       let currentLat = '---';
       let currentLon = '---';
       let currentAlt = '---';
@@ -422,10 +429,43 @@
       // 屏幕方向 (用于横屏交换)
       let screenOrientation = 0; // 0, 90, 180, 270
 
+      // ================= 工具函数 =================
+      // 根据屏幕方向计算显示的俯仰和横滚 (交换逻辑)
+      function computeDisplayAngles(beta, gamma) {
+        if (beta === '---' || gamma === '---') return { pitch: '---', roll: '---' };
+        const angle = screenOrientation;
+        let dispPitch, dispRoll;
+        if (Math.abs(angle) === 90 || angle === 270) {
+          // 横屏交换
+          if (angle === 90) {
+            dispPitch = gamma;      // 原gamma变成俯仰
+            dispRoll = -beta;        // 原beta取反变成横滚
+          } else if (angle === -90 || angle === 270) {
+            dispPitch = -gamma;
+            dispRoll = beta;
+          }
+        } else {
+          // 竖屏或倒置，不交换
+          dispPitch = beta;
+          dispRoll = gamma;
+        }
+        return { pitch: dispPitch.toFixed(1), roll: dispRoll.toFixed(1) };
+      }
+
       // 更新所有显示 (包括分辨率)
       function updateDisplays() {
-        headingSpan.innerText = currentHeading;
-        pitchSpan.innerText = currentPitch;
+        headingSpan.innerText = currentAlpha;
+        // 根据屏幕方向计算显示的俯仰/横滚
+        if (currentBeta !== '---' && currentGamma !== '---') {
+          const disp = computeDisplayAngles(parseFloat(currentBeta), parseFloat(currentGamma));
+          displayPitch = disp.pitch;
+          displayRoll = disp.roll;
+        } else {
+          displayPitch = '---';
+          displayRoll = '---';
+        }
+        pitchSpan.innerText = displayPitch;
+        rollSpan.innerText = displayRoll;
         latSpan.innerText = currentLat;
         lonSpan.innerText = currentLon;
         altSpan.innerText = currentAlt;
@@ -453,34 +493,34 @@
       // ================= 传感器：指南针 & 俯仰/横滚 =================
       function handleOrientation(event) {
         let heading = event.alpha;
-        let pitch = event.beta;   // 前后倾斜 -180~180
-        let roll = event.gamma;   // 左右倾斜 -90~90
+        let beta = event.beta;
+        let gamma = event.gamma;
 
         if (heading !== null && !isNaN(heading)) {
           heading = (heading + 360) % 360;
-          currentHeading = heading.toFixed(1);
+          currentAlpha = heading.toFixed(1);
         } else {
-          currentHeading = '---';
+          currentAlpha = '---';
         }
-        if (pitch !== null && !isNaN(pitch)) {
-          currentPitch = pitch.toFixed(1);
+        if (beta !== null && !isNaN(beta)) {
+          currentBeta = beta.toFixed(1);
         } else {
-          currentPitch = '---';
+          currentBeta = '---';
         }
-        if (roll !== null && !isNaN(roll)) {
-          currentRoll = roll.toFixed(1);
+        if (gamma !== null && !isNaN(gamma)) {
+          currentGamma = gamma.toFixed(1);
         } else {
-          currentRoll = '---';
+          currentGamma = '---';
         }
 
-        // 更新水平仪绘制
-        drawLevel(pitch, roll);
+        // 更新水平仪绘制 (传入原始值，内部会进行交换和变色)
+        drawLevel(parseFloat(currentBeta) || null, parseFloat(currentGamma) || null);
         updateDisplays();
       }
 
-      // 绘制水平仪 (一圆两线 + 气泡)
+      // 绘制水平仪 (一圆两线 + 气泡)，气泡缩小，点线重合时线条变色
       function drawLevel(beta, gamma) {
-        if (beta === '---' || gamma === '---') {
+        if (beta === null || gamma === null || isNaN(beta) || isNaN(gamma)) {
           // 无数据时画灰色
           ctx.clearRect(0, 0, 90, 90);
           ctx.beginPath();
@@ -491,18 +531,14 @@
           return;
         }
 
-        // 根据屏幕方向交换 beta 和 gamma
+        // 根据屏幕方向交换 beta 和 gamma 以匹配物理直觉
+        const angle = screenOrientation;
         let dispBeta = beta;
         let dispGamma = gamma;
-        // screenOrientation: 0 竖屏, 90 横屏(顺时针旋转), -90/270 横屏(逆时针)
-        const angle = screenOrientation;
         if (Math.abs(angle) === 90 || angle === 270) {
-          // 横屏模式，交换并取反使得水平仪方向符合直觉
-          // 通常我们希望横屏时水平仪的水平线对应手机长边水平
-          // 这里简单交换：左右倾斜（gamma）变为前后（beta），反之亦然，并根据旋转方向调整符号
           if (angle === 90) {
-            dispBeta = gamma;      // 旋转90度：原来左右变成前后
-            dispGamma = -beta;     // 原来前后变成左右，符号取反
+            dispBeta = gamma;
+            dispGamma = -beta;
           } else if (angle === -90 || angle === 270) {
             dispBeta = -gamma;
             dispGamma = beta;
@@ -517,6 +553,10 @@
         const ballX = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetX));
         const ballY = 45 + Math.min(maxOffset, Math.max(-maxOffset, offsetY));
 
+        // 判断气泡是否接近中心 (阈值 3 像素)
+        const centerDist = Math.hypot(ballX - 45, ballY - 45);
+        const isCentered = centerDist < 4; // 小于4像素视为重合
+
         // 绘制背景圆
         ctx.clearRect(0, 0, 90, 90);
         ctx.beginPath();
@@ -525,10 +565,10 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // 绘制十字参考线 (中心两条线)
+        // 绘制十字参考线 (中心两条线) - 根据是否重合变色
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = isCentered ? '#00ff00' : 'rgba(255,255,255,0.5)'; // 重合变绿
+        ctx.lineWidth = 1.5;
         ctx.moveTo(45, 15);
         ctx.lineTo(45, 75);
         ctx.stroke();
@@ -536,9 +576,9 @@
         ctx.lineTo(75, 45);
         ctx.stroke();
 
-        // 绘制气泡 (小圆)
+        // 绘制气泡 (小圆) - 缩小为半径4
         ctx.beginPath();
-        ctx.arc(ballX, ballY, 6, 0, 2 * Math.PI);
+        ctx.arc(ballX, ballY, 4, 0, 2 * Math.PI);
         ctx.fillStyle = '#ffd966';
         ctx.shadowColor = '#000';
         ctx.shadowBlur = 4;
@@ -553,10 +593,12 @@
         } else if (window.orientation !== undefined) {
           screenOrientation = window.orientation;
         }
-        // 重新绘制水平仪 (使用最近的角度)
-        if (currentPitch !== '---' && currentRoll !== '---') {
-          drawLevel(parseFloat(currentPitch), parseFloat(currentRoll));
+        // 重新绘制水平仪 (使用最近的原始角度)
+        if (currentBeta !== '---' && currentGamma !== '---') {
+          drawLevel(parseFloat(currentBeta), parseFloat(currentGamma));
         }
+        // 更新显示数值 (因为交换可能变化)
+        updateDisplays();
       }
       window.addEventListener('orientationchange', updateOrientation);
       // 初始获取方向
@@ -637,22 +679,32 @@
         cameraSelect.innerHTML = options;
       }
 
-      // ================= 摄像头管理 (最高分辨率) =================
+      // ================= 摄像头管理 (尝试所有常见分辨率) =================
       async function startCamera(deviceId) {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
         }
         try {
-          // 设置理想值为很大，以获取最高分辨率
+          // 常见分辨率列表 (从高到低，覆盖8000x6000以下)
+          const commonResolutions = [
+            { width: 4096, height: 3072 },
+            { width: 3840, height: 2160 },
+            { width: 2560, height: 1440 },
+            { width: 1920, height: 1080 },
+            { width: 1600, height: 1200 },
+            { width: 1440, height: 1080 },
+            { width: 1280, height: 720 },
+            { width: 1024, height: 768 },
+            { width: 800, height: 600 }
+          ];
+          const advancedConstraints = commonResolutions.map(r => ({ width: r.width, height: r.height }));
+
           const constraints = {
             video: {
               deviceId: deviceId ? { exact: deviceId } : undefined,
-              width: { ideal:  7296},
-              height: { ideal: 5472 },
-              advanced: [
-                { width: 3840, height: 2160 },
-                { width: 1920, height: 1080 }
-              ]
+              width: { ideal: 5120 }, // 理想最大
+              height: { ideal: 2880 },
+              advanced: advancedConstraints
             },
             audio: false
           };
@@ -779,13 +831,10 @@
           showStatus('设备不支持对焦控制', true);
           return;
         }
-        // 尝试触发单次自动对焦 (auto)
         if (capabilities.focusMode && capabilities.focusMode.includes('auto')) {
           try {
-            // 先设置为 auto，触发一次对焦
             await track.applyConstraints({ advanced: [{ focusMode: 'auto' }] });
             showStatus('自动对焦已触发', false);
-            // 可选：稍后重置为 continuous 如果支持，但保留 auto 也可以
           } catch (e) {
             showStatus('对焦触发失败', true);
           }
@@ -824,16 +873,17 @@
         ctx.lineWidth = canvas.width / 400;
         ctx.stroke();
 
-        // 绘制信息
+        // 绘制信息 (使用当前显示的数值)
         ctx.font = `bold ${canvas.width/35}px 'Courier New', monospace`;
         ctx.fillStyle = '#ffd966';
         ctx.shadowColor = '#000';
         ctx.shadowBlur = 6;
         const pad = canvas.width / 35;
-        ctx.fillText(`🧙 ${currentHeading}°`, pad, pad*2);
-        ctx.fillText(`📐 ${currentPitch}°`, pad, pad*4);
-        ctx.fillText(`📍 ${currentLat}, ${currentLon}`, pad, pad*6);
-        ctx.fillText(`⬆️ ${currentAlt}m`, pad, pad*8);
+        ctx.fillText(`🧙 ${currentAlpha}°`, pad, pad*2);
+        ctx.fillText(`📐 ${displayPitch}°`, pad, pad*4);
+        ctx.fillText(`🌀 ${displayRoll}°`, pad, pad*6);
+        ctx.fillText(`📍 ${currentLat}, ${currentLon}`, pad, pad*8);
+        ctx.fillText(`⬆️ ${currentAlt}m`, pad, pad*10);
         ctx.shadowBlur = 0;
 
         const link = document.createElement('a');
