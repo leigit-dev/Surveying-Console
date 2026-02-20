@@ -537,8 +537,12 @@
           currentAlpha = '---';
         }
         if (beta !== null && !isNaN(beta)) {
-          currentBeta = beta.toFixed(1);
-        } else {
+  let adjustedBeta = beta - 90;
+  // 可选：将结果限制在 -180 到 180 范围内（不强制）
+  // while (adjustedBeta < -180) adjustedBeta += 360;
+  // while (adjustedBeta > 180) adjustedBeta -= 360;
+  currentBeta = adjustedBeta.toFixed(1);
+} else {
           currentBeta = '---';
         }
         if (gamma !== null && !isNaN(gamma)) {
