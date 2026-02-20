@@ -529,6 +529,8 @@
         let gamma = event.gamma;
 
         if (heading !== null && !isNaN(heading)) {
+          // 如果需要反转方向（逆时针变顺时针），取消下面一行的注释
+          heading = 360 - heading;  // 反转符号
           heading = (heading + 360) % 360;
           currentAlpha = heading.toFixed(1);
         } else {
