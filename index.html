@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>终极相机：Compass.js + 三维姿态补偿</title>
+  <title>终极相机：三维稳定指南针/俯仰/横滚/校准/滤波</title>
   <style>
-    /* ... (保持原有样式不变，与上一版本完全相同) ... */
     * {
       margin: 0;
       padding: 0;
@@ -97,6 +96,7 @@
       background: rgba(255,255,255,0.2);
       margin: 6px 0;
     }
+
     #level-canvas {
       position: absolute;
       top: 16px;
@@ -112,6 +112,7 @@
       z-index: 35;
       pointer-events: none;
     }
+
     #fullscreenBtn {
       position: absolute;
       top: 16px;
@@ -139,6 +140,7 @@
       transform: scale(0.94);
       background: rgba(80, 80, 120, 0.8);
     }
+
     .crosshair {
       position: absolute;
       top: 50%;
@@ -183,6 +185,7 @@
       box-shadow: none;
       pointer-events: none;
     }
+
     .toolbar {
       position: absolute;
       bottom: 16px;
@@ -263,6 +266,7 @@
       border: 2px solid #ffb700;
       cursor: pointer;
     }
+
     #startBtn {
       position: absolute;
       bottom: 30px;
@@ -289,6 +293,7 @@
     #startBtn.hidden {
       display: none;
     }
+
     .status-message {
       position: absolute;
       top: 100px;
@@ -317,8 +322,6 @@
       text-shadow: 0 2px 4px black;
     }
   </style>
-  <!-- 引入 Compass.js 库，用于获取兼容且准确的罗盘方向 -->
-  <script src="https://unpkg.com/@joeyklee/compass-js@latest/dist/compass.js"></script>
 </head>
 <body>
   <div id="video-container">
@@ -338,6 +341,10 @@
       <div class="info-row">
         <span class="info-label">🌀 横滚角</span>
         <span class="info-value" id="rollValue">---</span><span class="info-unit">°</span>
+      </div>
+      <div class="info-row" id="absoluteRow" style="display: none;">
+        <span class="info-label">🔒 绝对方向</span>
+        <span class="info-value" id="absoluteValue">---</span>
       </div>
       <div class="divider"></div>
       <div class="info-row">
@@ -381,6 +388,7 @@
         <span id="expValue">0.0EV</span>
         <input type="range" id="expSlider" min="-3" max="3" step="0.1" value="0">
       </div>
+      <button id="calibrateBtn" title="将当前方向设为0°">🎯 校准</button>
       <button id="freezeBtn" title="冻结画面">❄️ 冻结</button>
       <button id="screenshotBtn" title="保存截图">📸</button>
     </div>
@@ -400,6 +408,8 @@
       const headingSpan = document.getElementById('headingValue');
       const pitchSpan = document.getElementById('pitchValue');
       const rollSpan = document.getElementById('rollValue');
+      const absoluteRow = document.getElementById('absoluteRow');
+      const absoluteSpan = document.getElementById('absoluteValue');
       const latSpan = document.getElementById('latValue');
       const lonSpan = document.getElementById('lonValue');
       const altSpan = document.getElementById('altValue');
@@ -412,6 +422,7 @@
       const zoomValue = document.getElementById('zoomValue');
       const expSlider = document.getElementById('expSlider');
       const expValue = document.getElementById('expValue');
+      const calibrateBtn = document.getElementById('calibrateBtn');
       const freezeBtn = document.getElementById('freezeBtn');
       const screenshotBtn = document.getElementById('screenshotBtn');
       const fullscreenBtn = document.getElementById('fullscreenBtn');
@@ -419,12 +430,11 @@
       const ctx = levelCanvas.getContext('2d');
 
       // 状态变量
-      let compass = null;                // Compass.js 实例
-      let compassHeading = '---';        // 经过补偿的航向
-      let currentBeta = '---';           // 原始俯仰 (从 deviceorientation 获取)
-      let currentGamma = '---';          // 原始横滚
-      let displayPitch = '---';          // 经过横屏交换后的俯仰
-      let displayRoll = '---';           // 经过横屏交换后的横滚
+      let currentAlpha = '---';      // 原始滤波后的alpha
+      let currentBeta = '---';
+      let currentGamma = '---';
+      let displayPitch = '---';
+      let displayRoll = '---';
       let currentLat = '---';
       let currentLon = '---';
       let currentAlt = '---';
@@ -444,11 +454,19 @@
       let currentExposure = 0;
       let frozen = false;
 
+      // 滤波参数
+      const filterAlpha = 0.2;       // 一阶低通滤波系数 (越小越平滑)
+      let filteredAlpha = null;
+      let filteredBeta = null;
+      let filteredGamma = null;
+
+      // 校准偏移量
+      let calibrationOffset = 0;
+
       // 屏幕方向
       let screenOrientation = 0;
 
       // ================= 工具函数 =================
-      // 根据屏幕方向计算显示的俯仰和横滚
       function computeDisplayAngles(beta, gamma) {
         if (beta === '---' || gamma === '---') return { pitch: '---', roll: '---' };
         const angle = screenOrientation;
@@ -469,7 +487,14 @@
       }
 
       function updateDisplays() {
-        headingSpan.innerText = compassHeading;  // 使用 Compass.js 提供的航向
+        // 应用校准偏移量到显示值
+        if (currentAlpha !== '---') {
+          let calibrated = (parseFloat(currentAlpha) - calibrationOffset + 360) % 360;
+          headingSpan.innerText = calibrated.toFixed(1);
+        } else {
+          headingSpan.innerText = '---';
+        }
+
         if (currentBeta !== '---' && currentGamma !== '---') {
           const disp = computeDisplayAngles(parseFloat(currentBeta), parseFloat(currentGamma));
           displayPitch = disp.pitch;
@@ -480,6 +505,7 @@
         }
         pitchSpan.innerText = displayPitch;
         rollSpan.innerText = displayRoll;
+
         latSpan.innerText = currentLat;
         lonSpan.innerText = currentLon;
         altSpan.innerText = currentAlt;
@@ -503,77 +529,60 @@
         }, 3000);
       }
 
-      // ================= 使用 Compass.js 获取准确航向 =================
-      async function initCompass() {
-        try {
-          compass = new Compass();
-          // 监听罗盘变化
-          compass.watch(function(heading) {
-            if (frozen) return; // 冻结时不更新
-            // heading 是已经过补偿的准确航向（0-360°）
-            compassHeading = heading.toFixed(1);
-            updateDisplays();
-          });
+      // ================= 传感器数据处理 (带滤波) =================
+      function handleOrientation(event) {
+        if (frozen) return;
 
-          // 初始化 Compass（异步）
-          await compass.init();
-          showStatus('Compass.js 初始化成功', false);
-        } catch (err) {
-          console.warn('Compass.js 初始化失败，降级使用原始 alpha', err);
-          // 降级方案：直接监听 deviceorientation
-          setupFallbackOrientationListener();
+        // 检测是否为绝对方向
+        if (event.absolute !== undefined) {
+          absoluteRow.style.display = 'block';
+          absoluteSpan.innerText = event.absolute ? '是' : '否 (需校准)';
+          if (!event.absolute) {
+            // 非绝对方向时提示用户校准
+            // 不强制，仅提示
+          }
         }
-      }
 
-      // ================= 降级方案：原始 deviceorientation =================
-      function setupFallbackOrientationListener() {
-        if (deviceOrientationHandler) {
-          window.removeEventListener('deviceorientation', deviceOrientationHandler);
-        }
-        deviceOrientationHandler = (event) => {
-          if (frozen) return;
+        let heading = event.alpha;
+        let beta = event.beta;
+        let gamma = event.gamma;
 
-          // 航向（如果 compass.js 不可用）
-          if (compassHeading === '---' && event.alpha !== null && !isNaN(event.alpha)) {
-            let heading = (event.alpha + 360) % 360;
-            compassHeading = heading.toFixed(1);
-          }
+        // 有效性检查
+        if (heading === null || isNaN(heading)) heading = filteredAlpha !== null ? filteredAlpha : 0;
+        if (beta === null || isNaN(beta)) beta = filteredBeta !== null ? filteredBeta : 0;
+        if (gamma === null || isNaN(gamma)) gamma = filteredGamma !== null ? filteredGamma : 0;
 
-          // 俯仰/横滚
-          if (event.beta !== null && !isNaN(event.beta)) {
-            currentBeta = event.beta.toFixed(1);
-          } else {
-            currentBeta = '---';
-          }
-          if (event.gamma !== null && !isNaN(event.gamma)) {
-            currentGamma = event.gamma.toFixed(1);
-          } else {
-            currentGamma = '---';
-          }
-
-          drawLevel(parseFloat(currentBeta) || null, parseFloat(currentGamma) || null);
-          updateDisplays();
-        };
-
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-          DeviceOrientationEvent.requestPermission()
-            .then(permissionState => {
-              if (permissionState === 'granted') {
-                window.addEventListener('deviceorientation', deviceOrientationHandler);
-                orientationListenerActive = true;
-                showStatus('指南针已授权（降级模式）', false);
-              } else {
-                hintText.innerText = '指南针权限被拒绝';
-              }
-            })
-            .catch(err => console.warn('传感器权限请求失败', err));
+        // 低通滤波
+        if (filteredAlpha === null) {
+          filteredAlpha = heading;
+          filteredBeta = beta;
+          filteredGamma = gamma;
         } else {
-          window.addEventListener('deviceorientation', deviceOrientationHandler);
-          orientationListenerActive = true;
+          // 处理角度环绕 (alpha 0-360)
+          let diff = heading - filteredAlpha;
+          if (diff > 180) diff -= 360;
+          if (diff < -180) diff += 360;
+          filteredAlpha += filterAlpha * diff;
+          // 归一化
+          filteredAlpha = (filteredAlpha + 360) % 360;
+
+          filteredBeta += filterAlpha * (beta - filteredBeta);
+          filteredGamma += filterAlpha * (gamma - filteredGamma);
         }
+
+        // 保存为字符串 (保留一位小数)
+        currentAlpha = filteredAlpha.toFixed(1);
+        // 可选的beta调整（减去90°，根据需要取消注释）
+        // let adjustedBeta = filteredBeta - 90;
+        // currentBeta = adjustedBeta.toFixed(1);
+        currentBeta = filteredBeta.toFixed(1);
+        currentGamma = filteredGamma.toFixed(1);
+
+        drawLevel(parseFloat(currentBeta) || null, parseFloat(currentGamma) || null);
+        updateDisplays();
       }
 
-      // ================= 水平仪绘制 =================
+      // 绘制水平仪 (线条独立变色)
       function drawLevel(beta, gamma) {
         if (beta === null || gamma === null || isNaN(beta) || isNaN(gamma)) {
           ctx.clearRect(0, 0, 90, 90);
@@ -651,6 +660,30 @@
       window.addEventListener('orientationchange', updateOrientation);
       updateOrientation();
 
+      function setupOrientationListener() {
+        if (deviceOrientationHandler) {
+          window.removeEventListener('deviceorientation', deviceOrientationHandler);
+        }
+        deviceOrientationHandler = handleOrientation;
+
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          DeviceOrientationEvent.requestPermission()
+            .then(permissionState => {
+              if (permissionState === 'granted') {
+                window.addEventListener('deviceorientation', deviceOrientationHandler);
+                orientationListenerActive = true;
+                showStatus('指南针已授权', false);
+              } else {
+                hintText.innerText = '指南针权限被拒绝';
+              }
+            })
+            .catch(err => console.warn('传感器权限请求失败', err));
+        } else {
+          window.addEventListener('deviceorientation', deviceOrientationHandler);
+          orientationListenerActive = true;
+        }
+      }
+
       // ================= GPS =================
       function startGPS() {
         if (!navigator.geolocation) {
@@ -683,7 +716,7 @@
         );
       }
 
-      // ================= 摄像头管理 (与上一版本相同) =================
+      // ================= 枚举摄像头 =================
       async function enumerateCameras() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
           cameraSelect.innerHTML = '<option value="">无摄像头</option>';
@@ -703,6 +736,7 @@
         cameraSelect.innerHTML = options;
       }
 
+      // ================= 摄像头管理 =================
       async function startCamera(deviceId) {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
@@ -841,6 +875,7 @@
         }
       }
 
+      // ================= 自动对焦 =================
       async function triggerAutoFocus() {
         if (!currentStream) return;
         if (frozen) unfreeze();
@@ -863,6 +898,18 @@
         }
       }
 
+      // ================= 校准 =================
+      function calibrate() {
+        if (currentAlpha !== '---') {
+          calibrationOffset = parseFloat(currentAlpha);
+          showStatus(`校准完成：当前方向设为0°`, false);
+          updateDisplays(); // 立即更新显示
+        } else {
+          showStatus('尚无指南针数据', true);
+        }
+      }
+
+      // ================= 冻结/解冻 =================
       function freeze() {
         if (frozen) return;
         frozen = true;
@@ -882,13 +929,11 @@
       }
 
       function toggleFreeze() {
-        if (frozen) unfreeze(); else freeze();
-      }
-
-      function autoUnfreeze() {
         if (frozen) unfreeze();
+        else freeze();
       }
 
+      // ================= 截屏 =================
       function takeScreenshot() {
         if (!video.videoWidth || !video.videoHeight) {
           showStatus('摄像头尚未就绪', true);
@@ -899,7 +944,7 @@
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+        // 绘制十字准心
         ctx.beginPath();
         ctx.strokeStyle = 'white';
         ctx.lineWidth = canvas.width / 300;
@@ -918,12 +963,18 @@
         ctx.lineWidth = canvas.width / 400;
         ctx.stroke();
 
+        // 获取校准后的显示值
+        let calibratedHeading = '---';
+        if (currentAlpha !== '---') {
+          calibratedHeading = ((parseFloat(currentAlpha) - calibrationOffset + 360) % 360).toFixed(1);
+        }
+
         ctx.font = `bold ${canvas.width/35}px 'Courier New', monospace`;
         ctx.fillStyle = '#ffd966';
         ctx.shadowColor = '#000';
         ctx.shadowBlur = 6;
         const pad = canvas.width / 35;
-        ctx.fillText(`🧙 ${compassHeading}°`, pad, pad*2);
+        ctx.fillText(`🧙 ${calibratedHeading}°`, pad, pad*2);
         ctx.fillText(`📐 ${displayPitch}°`, pad, pad*4);
         ctx.fillText(`🌀 ${displayRoll}°`, pad, pad*6);
         ctx.fillText(`📍 ${currentLat}, ${currentLon}`, pad, pad*8);
@@ -937,6 +988,7 @@
         showStatus('截图已保存', false);
       }
 
+      // ================= 全屏 =================
       function toggleFullscreen() {
         if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen();
@@ -949,12 +1001,8 @@
       async function onStartClick() {
         startBtn.disabled = true;
         startBtn.innerText = '⏳ 启动中...';
-
-        // 初始化 Compass.js（自动处理权限和坐标系补偿）
-        await initCompass();
-
+        setupOrientationListener();
         startGPS();
-
         try {
           const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           tempStream.getTracks().forEach(t => t.stop());
@@ -1000,13 +1048,29 @@
         setExposure(val);
       });
 
+      calibrateBtn.addEventListener('click', calibrate);
+
       freezeBtn.addEventListener('click', toggleFreeze);
+
       screenshotBtn.addEventListener('click', takeScreenshot);
       fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+      function autoUnfreeze() {
+        if (frozen) unfreeze();
+      }
+
+      if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) {
+        window.addEventListener('deviceorientation', handleOrientation);
+        orientationListenerActive = true;
+        hintText.innerText = '传感器已自动监听，点击下方启动摄像头和GPS';
+      }
 
       window.addEventListener('beforeunload', () => {
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (deviceOrientationHandler) {
+          window.removeEventListener('deviceorientation', deviceOrientationHandler);
         }
         if (gpsWatchId !== null) {
           navigator.geolocation.clearWatch(gpsWatchId);
