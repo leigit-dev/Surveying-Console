@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>运动追踪 · 全波形 · 原始数据</title>
+    <title>运动追踪 · 全波形 · 归零速度</title>
     <style>
-        /* ===== 全局 ===== */
         * { margin:0; padding:0; box-sizing:border-box; }
         :root {
             --bg-primary: #0b0e1a;
@@ -52,6 +51,7 @@
         .btn-secondary { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); }
         .btn-calibrate { background:rgba(0,230,118,0.15); color:var(--accent-green); border:1px solid rgba(0,230,118,0.2); }
         .btn-calibrate.active { background:var(--accent-green); color:#000; }
+        .btn-zero { background:rgba(255,145,0,0.15); color:var(--accent-orange); border:1px solid rgba(255,145,0,0.2); }
         .btn-icon { font-size:16px; }
 
         .refresh-control { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); }
@@ -67,7 +67,7 @@
         .data-item .value.orange { color:var(--accent-orange); }
         .data-item .value.pink { color:var(--accent-pink); }
         .data-item .unit { font-size:9px; color:var(--text-secondary); margin-left:2px; }
-        .raw-data { display:flex; gap:12px; justify-content:center; font-size:11px; color:var(--text-secondary); margin-top:6px; }
+        .raw-data { display:flex; gap:12px; justify-content:center; font-size:11px; color:var(--text-secondary); margin-top:6px; flex-wrap:wrap; }
         .raw-data span { color:var(--text-primary); }
 
         .chart-container { position:relative; width:100%; aspect-ratio:16/9; min-height:180px; background:rgba(0,0,0,0.3); border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.04); }
@@ -79,49 +79,12 @@
         .map-controls .btn { flex:0 0 auto; padding:6px 12px; font-size:16px; min-width:40px; background:rgba(255,255,255,0.08); }
         .map-controls .btn.active { background:var(--accent-cyan); color:#000; }
 
-        /* 六个波形 */
-        .wave-grid {
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-            margin-top:4px;
-        }
-        .wave-row {
-            display:flex;
-            align-items:center;
-            gap:8px;
-        }
-        .wave-row .axis-label {
-            width:28px;
-            font-size:12px;
-            font-weight:700;
-            color:var(--text-secondary);
-            text-align:right;
-            flex-shrink:0;
-        }
-        .wave-row .wave-container {
-            flex:1;
-            height:80px;  /* 加高 */
-            background:rgba(0,0,0,0.3);
-            border-radius:8px;
-            overflow:hidden;
-            position:relative;
-            min-height:60px;
-        }
-        .wave-row .wave-container canvas {
-            display:block;
-            width:100%;
-            height:100%;
-            touch-action:none;
-        }
-        .wave-row .wave-container .wave-label {
-            position:absolute;
-            bottom:2px;
-            right:6px;
-            font-size:8px;
-            color:rgba(255,255,255,0.2);
-            pointer-events:none;
-        }
+        .wave-grid { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+        .wave-row { display:flex; align-items:center; gap:8px; }
+        .wave-row .axis-label { width:28px; font-size:12px; font-weight:700; color:var(--text-secondary); text-align:right; flex-shrink:0; }
+        .wave-row .wave-container { flex:1; height:80px; background:rgba(0,0,0,0.3); border-radius:8px; overflow:hidden; position:relative; min-height:60px; }
+        .wave-row .wave-container canvas { display:block; width:100%; height:100%; touch-action:none; }
+        .wave-row .wave-container .wave-label { position:absolute; bottom:2px; right:6px; font-size:8px; color:rgba(255,255,255,0.2); pointer-events:none; }
         .wave-info { display:flex; justify-content:space-between; margin-top:4px; font-size:10px; color:var(--text-secondary); }
 
         .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); backdrop-filter:blur(12px); padding:12px 24px; border-radius:16px; font-size:14px; color:#fff; border:1px solid rgba(255,255,255,0.08); box-shadow:0 8px 40px rgba(0,0,0,0.5); z-index:999; opacity:0; transform:translateX(-50%) translateY(20px); transition:all 0.4s cubic-bezier(0.16,1,0.3,1); pointer-events:none; max-width:85%; text-align:center; }
@@ -154,7 +117,7 @@
     <!-- ===== 头部 ===== -->
     <div class="card header-card">
         <div class="header-row">
-            <div class="app-title">🧭 运动追踪 <small>全波形</small></div>
+            <div class="app-title">🧭 运动追踪 <small>归零速度</small></div>
             <div class="status-badge">
                 <span class="status-dot" id="statusDot"></span>
                 <span id="statusText">待机</span>
@@ -165,6 +128,7 @@
             <button class="btn btn-secondary" id="btnReset"><span class="btn-icon">⟳</span> 重置</button>
             <button class="btn btn-secondary" id="btnExport"><span class="btn-icon">⬇</span> 导出</button>
             <button class="btn btn-calibrate" id="btnCalibrate"><span class="btn-icon">⚖</span> 校准</button>
+            <button class="btn btn-zero" id="btnZeroSpeed"><span class="btn-icon">⏬</span> 归零速度</button>
         </div>
         <div class="flex-row mt-1" style="justify-content:space-between;">
             <span style="font-size:11px;color:var(--text-secondary);">数据点: <strong id="pointCount">0</strong></span>
@@ -252,21 +216,15 @@
         </div>
     </div>
 
-    <!-- ===== 六个波形图 (加速度+速度) ===== -->
+    <!-- ===== 六个波形图 ===== -->
     <div class="card">
         <div class="card-title"><span>📉 加速度 & 速度波形 (可滑动)</span><span style="font-size:10px;color:var(--text-secondary);">← 左右滑动查看历史 →</span></div>
         <div class="wave-grid" id="waveGrid">
-            <!-- 加速度 X -->
             <div class="wave-row"><span class="axis-label">aX</span><div class="wave-container" id="waveAx"><canvas id="waveCanvasAx"></canvas><span class="wave-label" style="color:#00d4ff;">ax</span></div></div>
-            <!-- 加速度 Y -->
             <div class="wave-row"><span class="axis-label">aY</span><div class="wave-container" id="waveAy"><canvas id="waveCanvasAy"></canvas><span class="wave-label" style="color:#00e676;">ay</span></div></div>
-            <!-- 加速度 Z -->
             <div class="wave-row"><span class="axis-label">aZ</span><div class="wave-container" id="waveAz"><canvas id="waveCanvasAz"></canvas><span class="wave-label" style="color:#7c4dff;">az</span></div></div>
-            <!-- 速度 X -->
             <div class="wave-row"><span class="axis-label">vX</span><div class="wave-container" id="waveVx"><canvas id="waveCanvasVx"></canvas><span class="wave-label" style="color:#ff9100;">vx</span></div></div>
-            <!-- 速度 Y -->
             <div class="wave-row"><span class="axis-label">vY</span><div class="wave-container" id="waveVy"><canvas id="waveCanvasVy"></canvas><span class="wave-label" style="color:#ff4081;">vy</span></div></div>
-            <!-- 速度 Z -->
             <div class="wave-row"><span class="axis-label">vZ</span><div class="wave-container" id="waveVz"><canvas id="waveCanvasVz"></canvas><span class="wave-label" style="color:#ffea00;">vz</span></div></div>
         </div>
         <div class="wave-info">
@@ -290,6 +248,7 @@
     const btnReset = $('#btnReset');
     const btnExport = $('#btnExport');
     const btnCalibrate = $('#btnCalibrate');
+    const btnZeroSpeed = $('#btnZeroSpeed');
     const pointCount = $('#pointCount');
     const durationDisplay = $('#durationDisplay');
     const toast = $('#toast');
@@ -313,14 +272,13 @@
     const mapInfo = $('#mapInfo');
     const heightInfo = $('#heightInfo');
 
-    // 六个波形容器和canvas
     const waveMap = {
-        ax: { container: document.getElementById('waveAx'), canvas: document.getElementById('waveCanvasAx'), color: '#00d4ff', label: 'ax' },
-        ay: { container: document.getElementById('waveAy'), canvas: document.getElementById('waveCanvasAy'), color: '#00e676', label: 'ay' },
-        az: { container: document.getElementById('waveAz'), canvas: document.getElementById('waveCanvasAz'), color: '#7c4dff', label: 'az' },
-        vx: { container: document.getElementById('waveVx'), canvas: document.getElementById('waveCanvasVx'), color: '#ff9100', label: 'vx' },
-        vy: { container: document.getElementById('waveVy'), canvas: document.getElementById('waveCanvasVy'), color: '#ff4081', label: 'vy' },
-        vz: { container: document.getElementById('waveVz'), canvas: document.getElementById('waveCanvasVz'), color: '#ffea00', label: 'vz' }
+        ax: { container: document.getElementById('waveAx'), canvas: document.getElementById('waveCanvasAx'), color: '#00d4ff' },
+        ay: { container: document.getElementById('waveAy'), canvas: document.getElementById('waveCanvasAy'), color: '#00e676' },
+        az: { container: document.getElementById('waveAz'), canvas: document.getElementById('waveCanvasAz'), color: '#7c4dff' },
+        vx: { container: document.getElementById('waveVx'), canvas: document.getElementById('waveCanvasVx'), color: '#ff9100' },
+        vy: { container: document.getElementById('waveVy'), canvas: document.getElementById('waveCanvasVy'), color: '#ff4081' },
+        vz: { container: document.getElementById('waveVz'), canvas: document.getElementById('waveCanvasVz'), color: '#ffea00' }
     };
     const waveKeys = ['ax','ay','az','vx','vy','vz'];
     const waveInfo = $('#waveInfo');
@@ -340,16 +298,13 @@
     let hasOrientation = false;
     let orientation = { alpha:0, beta:0, gamma:0 };
 
-    // 重力校准
     let calibGravity = { x:0, y:0, z:0 };
     let isCalibrated = false;
     let isCalibrating = false;
     let calibSamples = [];
 
-    // 原始加速度 (设备坐标系)
     let rawAccel = { x:0, y:0, z:0 };
 
-    // 数据历史 (世界坐标系线性加速度、速度、位置)
     const history = {
         time: [],
         ax: [], ay: [], az: [],
@@ -357,15 +312,13 @@
         px: [], py: [], pz: []
     };
 
-    // 当前值 (线性)
     let current = {
         ax:0, ay:0, az:0,
         vx:0, vy:0, vz:0,
         px:0, py:0, pz:0
     };
 
-    // 刷新率控制 (ms)
-    let sampleInterval = 20; // 默认50Hz -> 20ms
+    let sampleInterval = 20;
     fpsSelect.addEventListener('change', function() {
         const val = parseInt(this.value);
         sampleInterval = val === 0 ? 0 : 1000 / val;
@@ -410,16 +363,14 @@
         return { wx, wy, wz };
     }
 
-    // ---------- 传感器处理 (带刷新率限制) ----------
+    // ---------- 传感器处理 ----------
     function onDeviceMotion(event) {
         if (!isRecording) return;
         const now = performance.now();
-        // 刷新率限制
         if (sampleInterval > 0 && (now - lastSensorTime) < sampleInterval) return;
         const accel = event.acceleration;
         if (!accel) return;
         const ax = accel.x || 0, ay = accel.y || 0, az = accel.z || 0;
-        // 保存原始数据 (设备坐标系)
         rawAccel.x = ax;
         rawAccel.y = ay;
         rawAccel.z = az;
@@ -429,7 +380,6 @@
         if (dt > 0.05) dt = 0.016;
         lastSensorTime = now;
 
-        // 旋转到世界坐标系
         const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
         let linX = world.wx, linY = world.wy, linZ = world.wz;
         if (isCalibrated) {
@@ -547,6 +497,24 @@
                 }
             }
         }, 3000);
+    }
+
+    // ---------- 归零速度 ----------
+    function zeroSpeed() {
+        if (!isRecording) {
+            showToast('⚠️ 请先开始记录', 1500);
+            return;
+        }
+        current.vx = 0;
+        current.vy = 0;
+        current.vz = 0;
+        // 重置积分器的前值，防止跳变
+        // 我们不需要重置 prevVx 等，因为 integrate 使用 current.vx 累加，但 prevVx 用于计算？实际上这里用的是朴素积分，没有用 prevV。所以只需将 current.v 置零即可。
+        // 但历史速度数据会保留归零前的值，后续的新数据会从零开始。
+        showToast('⏬ 速度已归零', 1000);
+        // 立即刷新显示
+        updateUI();
+        drawWaveforms(); // 更新波形图
     }
 
     // ---------- 绘图辅助 ----------
@@ -691,7 +659,6 @@
         function mapX(vx) { return margin + (vx - minX) / (maxX - minX) * plotW; }
         function mapY(vy) { return margin + (vy - minY) / (maxY - minY) * plotH; }
 
-        // 网格
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
         for (let i=0; i<=8; i++) {
@@ -723,7 +690,6 @@
             ctx.stroke();
         }
 
-        // 当前位置
         const lastX = mapX(history.px[len-1]), lastY = mapY(history.py[len-1]);
         const glow = ctx.createRadialGradient(lastX, lastY, 0, lastX, lastY, 18);
         glow.addColorStop(0,'rgba(0,212,255,0.9)');
@@ -738,7 +704,6 @@
         ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
         ctx.fill();
 
-        // 起点
         if (len > 1) {
             const sx = mapX(history.px[0]), sy = mapY(history.py[0]);
             ctx.fillStyle = 'rgba(255,255,255,0.25)';
@@ -752,7 +717,6 @@
             ctx.fillText('● 起点', sx, sy + 8);
         }
 
-        // 陀螺仪方向箭头
         if (hasOrientation && len > 0) {
             const alphaRad = degToRad(orientation.alpha);
             const arrowLen = 25;
@@ -817,7 +781,6 @@
         function mapX(t) { return margin + (t - t0) / tRange * plotW; }
         function mapY(z) { return margin + (maxZ - z) / rangeZ * plotH; }
 
-        // 零线
         const zeroY = mapY(0);
         if (zeroY >= margin && zeroY <= margin + plotH) {
             ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -830,7 +793,6 @@
             ctx.setLineDash([]);
         }
 
-        // 填充
         ctx.beginPath();
         ctx.moveTo(mapX(timeArr[0]), margin + plotH);
         for (let i=0; i<len; i++) {
@@ -845,7 +807,6 @@
         ctx.fillStyle = grad;
         ctx.fill();
 
-        // 曲线
         ctx.beginPath();
         for (let i=0; i<len; i++) {
             const x = mapX(timeArr[i]), y = mapY(pzArr[i]);
@@ -859,7 +820,6 @@
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // 当前位置
         const lastX = mapX(timeArr[len-1]), lastY = mapY(pzArr[len-1]);
         ctx.fillStyle = '#7c4dff';
         ctx.beginPath();
@@ -870,7 +830,6 @@
         ctx.arc(lastX, lastY, 12, 0, Math.PI*2);
         ctx.fill();
 
-        // 俯仰箭头
         if (hasOrientation) {
             const betaRad = degToRad(orientation.beta);
             const arrowLen = 20;
@@ -942,10 +901,8 @@
     }
 
     function drawWaveforms() {
-        // 六个数据源: ax, ay, az, vx, vy, vz
         const keys = ['ax','ay','az','vx','vy','vz'];
         const colors = ['#00d4ff','#00e676','#7c4dff','#ff9100','#ff4081','#ffea00'];
-        const labels = ['ax (m/s²)','ay (m/s²)','az (m/s²)','vx (m/s)','vy (m/s)','vz (m/s)'];
         const units = ['m/s²','m/s²','m/s²','m/s','m/s','m/s'];
 
         const n = history.time.length;
@@ -1000,7 +957,6 @@
             function mapY2(val) { return margin + (maxVal - val) / range * plotH; }
             function mapX2(i) { return margin + (i / (count-1)) * plotW; }
 
-            // 网格
             ctx.strokeStyle = 'rgba(255,255,255,0.04)';
             ctx.lineWidth = 0.5;
             for (let i=0; i<5; i++) {
@@ -1011,7 +967,6 @@
                 ctx.stroke();
             }
 
-            // 零线
             const zeroY2 = mapY2(0);
             if (zeroY2 >= margin && zeroY2 <= margin + plotH) {
                 ctx.strokeStyle = 'rgba(255,255,255,0.08)';
@@ -1024,7 +979,6 @@
                 ctx.setLineDash([]);
             }
 
-            // 曲线
             ctx.beginPath();
             for (let i=0; i<count; i++) {
                 const x = mapX2(i);
@@ -1049,7 +1003,6 @@
                 ctx.fill();
             }
 
-            // 标尺 (X轴时间)
             const tStart = timeSlice[0];
             const tEnd = timeSlice[timeSlice.length-1];
             const tRange2 = tEnd - tStart || 1;
@@ -1128,7 +1081,6 @@
         dispAlpha.textContent = orientation.alpha.toFixed(1) + '°';
         dispBeta.textContent = orientation.beta.toFixed(1) + '°';
         dispGamma.textContent = orientation.gamma.toFixed(1) + '°';
-        // 原始加速度
         rawAx.textContent = rawAccel.x.toFixed(2);
         rawAy.textContent = rawAccel.y.toFixed(2);
         rawAz.textContent = rawAccel.z.toFixed(2);
@@ -1349,6 +1301,7 @@
         btnReset.addEventListener('click', fullReset);
         btnExport.addEventListener('click', exportData);
         btnCalibrate.addEventListener('click', performCalibration);
+        btnZeroSpeed.addEventListener('click', zeroSpeed);
 
         mapZoomIn.addEventListener('click', () => applyZoom(0.7));
         mapZoomOut.addEventListener('click', () => applyZoom(1.3));
@@ -1362,7 +1315,7 @@
         setupWaveTouch();
 
         if (!animFrameId) renderLoop();
-        console.log('🧭 运动追踪 · 全波形 · 原始数据已启动');
+        console.log('🧭 运动追踪 · 全波形 · 归零速度已启动');
     }
 
     if (document.readyState === 'loading') {
