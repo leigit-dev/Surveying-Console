@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>运动追踪 · 全波形 · 归零速度</title>
+    <title>运动追踪 · 平放直采</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         :root {
@@ -117,7 +117,7 @@
     <!-- ===== 头部 ===== -->
     <div class="card header-card">
         <div class="header-row">
-            <div class="app-title">🧭 运动追踪 <small>归零速度</small></div>
+            <div class="app-title">🧭 运动追踪 <small>平放直采</small></div>
             <div class="status-badge">
                 <span class="status-dot" id="statusDot"></span>
                 <span id="statusText">待机</span>
@@ -145,17 +145,17 @@
             </div>
         </div>
         <div class="calib-info" id="calibInfo">
-            <span>重力校准: <span id="calibStatus">未校准</span></span>
+            <span>重力校准 (设备坐标系): <span id="calibStatus">未校准</span></span>
             <span id="calibVector" style="display:none;">g: <span id="calibGx">0.00</span>, <span id="calibGy">0.00</span>, <span id="calibGz">0.00</span> m/s²</span>
         </div>
     </div>
 
     <!-- ===== 数据面板 ===== -->
     <div class="card">
-        <div class="card-title"><span>📊 实时数据 (线性加速度 & 原始)</span></div>
+        <div class="card-title"><span>📊 实时数据 (设备坐标系 · 平放)</span></div>
         <div class="data-grid">
             <div class="data-item">
-                <div class="label">加速度</div>
+                <div class="label">加速度 (线性)</div>
                 <div class="value cyan" id="dispAx">0.00 <span class="unit">m/s²</span></div>
                 <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
                     <span id="dispAy">0.00</span> <span id="dispAz">0.00</span>
@@ -177,7 +177,7 @@
             </div>
         </div>
         <div class="raw-data">
-            <span>原始加速度 (设备坐标系):</span>
+            <span>原始加速度 (设备):</span>
             <span>X: <strong id="rawAx">0.00</strong></span>
             <span>Y: <strong id="rawAy">0.00</strong></span>
             <span>Z: <strong id="rawAz">0.00</strong></span>
@@ -191,7 +191,7 @@
 
     <!-- ===== 地图 ===== -->
     <div class="card" style="padding-bottom:14px;">
-        <div class="card-title"><span>🗺️ 路线图 (俯视 XY)</span><span class="point-counter" id="trailCount">0 点</span></div>
+        <div class="card-title"><span>🗺️ 路线图 (X-Y 水平)</span><span class="point-counter" id="trailCount">0 点</span></div>
         <div class="chart-container" id="mapContainer">
             <canvas id="mapCanvas"></canvas>
             <div class="chart-label">← X · Y → (最小刻度 0.1m)</div>
@@ -208,7 +208,7 @@
 
     <!-- ===== 高度曲线 ===== -->
     <div class="card" style="padding-bottom:14px;">
-        <div class="card-title"><span>📈 高度曲线 (Z) + 俯仰箭头</span><span class="point-counter" id="heightCount">0 点</span></div>
+        <div class="card-title"><span>📈 高度曲线 (Z 竖直)</span><span class="point-counter" id="heightCount">0 点</span></div>
         <div class="chart-container" id="heightContainer">
             <canvas id="heightCanvas"></canvas>
             <div class="chart-label">时间 →</div>
@@ -298,13 +298,16 @@
     let hasOrientation = false;
     let orientation = { alpha:0, beta:0, gamma:0 };
 
+    // 重力校准 (设备坐标系)
     let calibGravity = { x:0, y:0, z:0 };
     let isCalibrated = false;
     let isCalibrating = false;
     let calibSamples = [];
 
+    // 原始加速度 (设备坐标系)
     let rawAccel = { x:0, y:0, z:0 };
 
+    // 历史数据 (设备坐标系)
     const history = {
         time: [],
         ax: [], ay: [], az: [],
@@ -312,6 +315,7 @@
         px: [], py: [], pz: []
     };
 
+    // 当前值 (线性加速度)
     let current = {
         ax:0, ay:0, az:0,
         vx:0, vy:0, vz:0,
@@ -324,7 +328,7 @@
         sampleInterval = val === 0 ? 0 : 1000 / val;
     });
 
-    // ---------- 朴素积分 ----------
+    // ---------- 朴素积分 (直接使用设备坐标系) ----------
     function integrate(ax, ay, az, dt) {
         current.vx += ax * dt;
         current.vy += ay * dt;
@@ -337,33 +341,7 @@
         current.az = az;
     }
 
-    // ---------- 坐标变换 ----------
-    function degToRad(deg) { return deg * Math.PI / 180; }
-    function buildRotationMatrix(alphaDeg, betaDeg, gammaDeg) {
-        const a = degToRad(alphaDeg), b = degToRad(betaDeg), g = degToRad(gammaDeg);
-        const ca = Math.cos(a), sa = Math.sin(a);
-        const cb = Math.cos(b), sb = Math.sin(b);
-        const cg = Math.cos(g), sg = Math.sin(g);
-        const Rz = [[ca,-sa,0],[sa,ca,0],[0,0,1]];
-        const Rx = [[1,0,0],[0,cb,-sb],[0,sb,cb]];
-        const Ry = [[cg,0,sg],[0,1,0],[-sg,0,cg]];
-        function matMul(A,B) {
-            const C = [[0,0,0],[0,0,0],[0,0,0]];
-            for (let i=0; i<3; i++) for (let j=0; j<3; j++) for (let k=0; k<3; k++) C[i][j] += A[i][k]*B[k][j];
-            return C;
-        }
-        const RzRx = matMul(Rz, Rx);
-        return matMul(RzRx, Ry);
-    }
-    function transformAccel(ax, ay, az, alpha, beta, gamma) {
-        const R = buildRotationMatrix(alpha, beta, gamma);
-        const wx = R[0][0]*ax + R[0][1]*ay + R[0][2]*az;
-        const wy = R[1][0]*ax + R[1][1]*ay + R[1][2]*az;
-        const wz = R[2][0]*ax + R[2][1]*ay + R[2][2]*az;
-        return { wx, wy, wz };
-    }
-
-    // ---------- 传感器处理 ----------
+    // ---------- 传感器处理 (直接使用原始加速度) ----------
     function onDeviceMotion(event) {
         if (!isRecording) return;
         const now = performance.now();
@@ -380,8 +358,8 @@
         if (dt > 0.05) dt = 0.016;
         lastSensorTime = now;
 
-        const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
-        let linX = world.wx, linY = world.wy, linZ = world.wz;
+        // 扣除重力 (设备坐标系)
+        let linX = ax, linY = ay, linZ = az;
         if (isCalibrated) {
             linX -= calibGravity.x;
             linY -= calibGravity.y;
@@ -416,14 +394,14 @@
         hasOrientation = true;
     }
 
-    // ---------- 重力校准 ----------
+    // ---------- 重力校准 (设备坐标系) ----------
     function performCalibration() {
         if (isCalibrating) return;
         isCalibrating = true;
         btnCalibrate.textContent = '校准中…';
         btnCalibrate.disabled = true;
         calibSamples = [];
-        showToast('⚖ 请保持设备静止 2 秒…', 2500);
+        showToast('⚖ 请保持手机平放静止 2 秒…', 2500);
 
         let count = 0;
         const maxSamples = 60;
@@ -431,13 +409,12 @@
             const accel = e.acceleration;
             if (!accel) return;
             const ax = accel.x||0, ay = accel.y||0, az = accel.z||0;
-            const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
-            calibSamples.push({ wx: world.wx, wy: world.wy, wz: world.wz });
+            calibSamples.push({ x: ax, y: ay, z: az });
             count++;
             if (count >= maxSamples) {
                 window.removeEventListener('devicemotion', collect);
                 let sumX=0, sumY=0, sumZ=0;
-                for (let s of calibSamples) { sumX += s.wx; sumY += s.wy; sumZ += s.wz; }
+                for (let s of calibSamples) { sumX += s.x; sumY += s.y; sumZ += s.z; }
                 calibGravity.x = sumX / calibSamples.length;
                 calibGravity.y = sumY / calibSamples.length;
                 calibGravity.z = sumZ / calibSamples.length;
@@ -468,7 +445,7 @@
                 window.removeEventListener('devicemotion', collect);
                 if (count > 5) {
                     let sumX=0, sumY=0, sumZ=0;
-                    for (let s of calibSamples) { sumX += s.wx; sumY += s.wy; sumZ += s.wz; }
+                    for (let s of calibSamples) { sumX += s.x; sumY += s.y; sumZ += s.z; }
                     calibGravity.x = sumX / calibSamples.length;
                     calibGravity.y = sumY / calibSamples.length;
                     calibGravity.z = sumZ / calibSamples.length;
@@ -508,13 +485,9 @@
         current.vx = 0;
         current.vy = 0;
         current.vz = 0;
-        // 重置积分器的前值，防止跳变
-        // 我们不需要重置 prevVx 等，因为 integrate 使用 current.vx 累加，但 prevVx 用于计算？实际上这里用的是朴素积分，没有用 prevV。所以只需将 current.v 置零即可。
-        // 但历史速度数据会保留归零前的值，后续的新数据会从零开始。
         showToast('⏬ 速度已归零', 1000);
-        // 立即刷新显示
         updateUI();
-        drawWaveforms(); // 更新波形图
+        drawWaveforms();
     }
 
     // ---------- 绘图辅助 ----------
@@ -717,30 +690,6 @@
             ctx.fillText('● 起点', sx, sy + 8);
         }
 
-        if (hasOrientation && len > 0) {
-            const alphaRad = degToRad(orientation.alpha);
-            const arrowLen = 25;
-            const endX = lastX + arrowLen * Math.sin(alphaRad);
-            const endY = lastY - arrowLen * Math.cos(alphaRad);
-            ctx.save();
-            ctx.strokeStyle = '#ff4081';
-            ctx.lineWidth = 2.5;
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(endX, endY);
-            ctx.stroke();
-            const headLen = 10;
-            const angle = Math.atan2(endY - lastY, endX - lastX);
-            ctx.fillStyle = '#ff4081';
-            ctx.beginPath();
-            ctx.moveTo(endX, endY);
-            ctx.lineTo(endX - headLen * Math.cos(angle - 0.5), endY - headLen * Math.sin(angle - 0.5));
-            ctx.lineTo(endX - headLen * Math.cos(angle + 0.5), endY - headLen * Math.sin(angle + 0.5));
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
-
         drawAxisTicks(ctx, w, h, margin, minX, maxX, minY, maxY, 'm', 'm', 'X (m)', 'Y (m)');
 
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
@@ -829,30 +778,6 @@
         ctx.beginPath();
         ctx.arc(lastX, lastY, 12, 0, Math.PI*2);
         ctx.fill();
-
-        if (hasOrientation) {
-            const betaRad = degToRad(orientation.beta);
-            const arrowLen = 20;
-            const dir = -Math.sin(betaRad);
-            const endY2 = lastY + dir * arrowLen;
-            ctx.save();
-            ctx.strokeStyle = '#ff9100';
-            ctx.lineWidth = 2.5;
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(lastX, endY2);
-            ctx.stroke();
-            const headLen2 = 8;
-            const angle2 = dir > 0 ? -Math.PI/2 : Math.PI/2;
-            ctx.fillStyle = '#ff9100';
-            ctx.beginPath();
-            ctx.moveTo(lastX, endY2);
-            ctx.lineTo(lastX - headLen2*0.5, endY2 - dir*headLen2*0.866);
-            ctx.lineTo(lastX + headLen2*0.5, endY2 - dir*headLen2*0.866);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        }
 
         drawAxisTicks(ctx, w, h, margin, t0, t1, minZ, maxZ, 's', 'm', '时间 (s)', '高度 (m)');
 
@@ -1218,7 +1143,7 @@
             const url = URL.createObjectURL(blob);
             link.href = url;
             const dateStr = new Date().toISOString().slice(0,19).replace(/[:-]/g,'');
-            link.download = `motion_track_${dateStr}.csv`;
+            link.download = `motion_track_flat_${dateStr}.csv`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -1315,7 +1240,7 @@
         setupWaveTouch();
 
         if (!animFrameId) renderLoop();
-        console.log('🧭 运动追踪 · 全波形 · 归零速度已启动');
+        console.log('🧭 运动追踪 · 平放直采已启动');
     }
 
     if (document.readyState === 'loading') {
