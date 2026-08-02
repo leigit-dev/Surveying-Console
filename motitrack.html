@@ -3,1821 +3,1259 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>3D运动追踪器 · 带标尺</title>
+    <title>运动追踪 · 朴素积分 · 1dm限制</title>
     <style>
-        /* ===== 全局重置 & 主题 ===== */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --bg-primary: #0b0e1a;
             --bg-card: #141a2b;
-            --bg-card-hover: #1c2440;
             --text-primary: #e8edf5;
             --text-secondary: #8a9bb5;
             --accent-cyan: #00d4ff;
-            --accent-blue: #4a7cf7;
-            --accent-purple: #7c4dff;
             --accent-green: #00e676;
+            --accent-purple: #7c4dff;
             --accent-orange: #ff9100;
             --accent-pink: #ff4081;
-            --shadow-glow: 0 4px 30px rgba(0, 180, 255, 0.08);
             --radius: 18px;
             --safe-top: env(safe-area-inset-top, 12px);
             --safe-bottom: env(safe-area-inset-bottom, 12px);
         }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             padding: var(--safe-top) 12px var(--safe-bottom) 12px;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
-            touch-action: pan-y;
-            -webkit-tap-highlight-color: transparent;
         }
+        .app-scroll { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:14px; padding-bottom:8px; -webkit-overflow-scrolling:touch; }
+        .card { background:var(--bg-card); border-radius:var(--radius); padding:16px 18px; border:1px solid rgba(255,255,255,0.04); backdrop-filter:blur(2px); }
+        .card-title { font-size:13px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:10px; display:flex; justify-content:space-between; }
+        .header-card { padding:14px 18px; background:linear-gradient(145deg,#141a2b,#0f1422); }
+        .header-row { display:flex; align-items:center; justify-content:space-between; }
+        .app-title { font-size:20px; font-weight:700; background:linear-gradient(135deg,var(--accent-cyan),var(--accent-purple)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+        .app-title small { font-size:12px; -webkit-text-fill-color:var(--text-secondary); background:none; margin-left:6px; }
+        .status-badge { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-secondary); background:rgba(255,255,255,0.04); padding:4px 12px 4px 8px; border-radius:30px; }
+        .status-dot { width:8px; height:8px; border-radius:50%; background:#4a4a5a; transition:background 0.3s; }
+        .status-dot.active { background:var(--accent-green); box-shadow:0 0 12px rgba(0,230,118,0.4); animation:pulse-dot 1.2s ease-in-out infinite; }
+        .status-dot.calibrated { background:var(--accent-cyan); }
+        @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.85)} }
+        .btn-group { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+        .btn { flex:1; min-width:60px; padding:10px 12px; border:none; border-radius:12px; font-size:14px; font-weight:600; color:#fff; background:rgba(255,255,255,0.06); transition:all 0.2s; cursor:pointer; touch-action:manipulation; display:flex; align-items:center; justify-content:center; gap:6px; }
+        .btn:active { transform:scale(0.96); }
+        .btn-primary { background:linear-gradient(135deg,var(--accent-cyan),#4a7cf7); box-shadow:0 4px 20px rgba(0,212,255,0.2); }
+        .btn-primary.active { background:linear-gradient(135deg,var(--accent-orange),var(--accent-pink)); }
+        .btn-secondary { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); }
+        .btn-calibrate { background:rgba(0,230,118,0.15); color:var(--accent-green); border:1px solid rgba(0,230,118,0.2); }
+        .btn-calibrate.active { background:var(--accent-green); color:#000; }
+        .btn-icon { font-size:16px; }
 
-        .app-scroll {
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            padding-bottom: 8px;
-            -webkit-overflow-scrolling: touch;
-        }
+        .data-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:2px; }
+        .data-item { background:rgba(255,255,255,0.03); border-radius:12px; padding:8px 10px; text-align:center; border:1px solid rgba(255,255,255,0.04); }
+        .data-item .label { font-size:9px; text-transform:uppercase; color:var(--text-secondary); font-weight:500; }
+        .data-item .value { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:2px; }
+        .data-item .value.cyan { color:var(--accent-cyan); }
+        .data-item .value.green { color:var(--accent-green); }
+        .data-item .value.purple { color:var(--accent-purple); }
+        .data-item .unit { font-size:9px; color:var(--text-secondary); margin-left:2px; }
 
-        .card {
-            background: var(--bg-card);
-            border-radius: var(--radius);
-            padding: 16px 18px;
-            box-shadow: var(--shadow-glow);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            backdrop-filter: blur(2px);
-        }
-
-        .card-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        /* ===== 头部 ===== */
-        .header-card {
-            padding: 14px 18px;
-            background: linear-gradient(145deg, #141a2b, #0f1422);
-            border-bottom: 1px solid rgba(0, 212, 255, 0.08);
-        }
-
-        .header-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .app-title {
-            font-size: 20px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.3px;
-        }
-
-        .app-title small {
-            font-size: 12px;
-            font-weight: 400;
-            -webkit-text-fill-color: var(--text-secondary);
-            background: none;
-            margin-left: 6px;
-        }
-
-        .status-badge {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: var(--text-secondary);
-            background: rgba(255, 255, 255, 0.04);
-            padding: 4px 12px 4px 8px;
-            border-radius: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #4a4a5a;
-            transition: background 0.3s;
-            flex-shrink: 0;
-        }
-
-        .status-dot.active {
-            background: var(--accent-green);
-            box-shadow: 0 0 12px rgba(0, 230, 118, 0.4);
-            animation: pulse-dot 1.2s ease-in-out infinite;
-        }
-
-        .status-dot.error {
-            background: var(--accent-pink);
-        }
-        .status-dot.calibrated {
-            background: var(--accent-cyan);
-        }
-
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.6; transform: scale(0.85); }
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            flex: 1;
-            min-width: 60px;
-            padding: 10px 12px;
-            border: none;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #fff;
-            background: rgba(255, 255, 255, 0.06);
-            transition: all 0.2s;
-            cursor: pointer;
-            touch-action: manipulation;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            letter-spacing: 0.3px;
-        }
-
-        .btn:active {
-            transform: scale(0.96);
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
-            color: #fff;
-            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
-        }
-        .btn-primary:active { box-shadow: 0 2px 10px rgba(0, 212, 255, 0.1); }
-        .btn-primary.active {
-            background: linear-gradient(135deg, var(--accent-orange), var(--accent-pink));
-            box-shadow: 0 4px 20px rgba(255, 64, 129, 0.25);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .btn-secondary:active { background: rgba(255, 255, 255, 0.12); }
-
-        .btn-calibrate {
-            background: rgba(0, 230, 118, 0.15);
-            color: var(--accent-green);
-            border: 1px solid rgba(0, 230, 118, 0.2);
-        }
-        .btn-calibrate.active {
-            background: var(--accent-green);
-            color: #000;
-        }
-
-        .btn-icon { font-size: 16px; }
-
-        /* ===== 数据面板 ===== */
-        .data-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-top: 2px;
-        }
-        .data-item {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 12px;
-            padding: 8px 10px;
-            text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.04);
-        }
-        .data-item .label {
-            font-size: 9px;
-            text-transform: uppercase;
-            color: var(--text-secondary);
-            letter-spacing: 0.5px;
-            font-weight: 500;
-        }
-        .data-item .value {
-            font-size: 18px;
-            font-weight: 700;
-            font-variant-numeric: tabular-nums;
-            margin-top: 2px;
-            letter-spacing: -0.3px;
-        }
-        .data-item .value.cyan { color: var(--accent-cyan); }
-        .data-item .value.green { color: var(--accent-green); }
-        .data-item .value.purple { color: var(--accent-purple); }
-        .data-item .value.orange { color: var(--accent-orange); }
-        .data-item .value.pink { color: var(--accent-pink); }
-        .data-item .value.blue { color: var(--accent-blue); }
-        .data-item .unit {
-            font-size: 9px;
-            color: var(--text-secondary);
-            margin-left: 2px;
-            font-weight: 400;
-        }
-
-        /* ===== 图表容器 ===== */
-        .chart-container {
-            position: relative;
-            width: 100%;
-            aspect-ratio: 16/9;
-            min-height: 180px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.04);
-        }
-        .chart-container canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            touch-action: none;
-        }
-        .chart-container .chart-label {
-            position: absolute;
-            bottom: 8px;
-            left: 12px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.25);
-            pointer-events: none;
-            font-weight: 500;
-            letter-spacing: 0.3px;
-        }
-        .chart-container .chart-label-right {
-            position: absolute;
-            top: 10px;
-            right: 12px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.2);
-            pointer-events: none;
-            font-weight: 400;
-            text-align: right;
-            line-height: 1.4;
-        }
-
-        .chart-pair {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-        .chart-pair .chart-container {
-            aspect-ratio: 16/7;
-            min-height: 140px;
-        }
-
-        /* 地图控制 */
-        .map-controls {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            margin-top: 6px;
-            flex-wrap: wrap;
-        }
-        .map-controls .btn {
-            flex: 0 0 auto;
-            padding: 6px 12px;
-            font-size: 16px;
-            min-width: 40px;
-            background: rgba(255, 255, 255, 0.08);
-        }
-        .map-controls .btn.active {
-            background: var(--accent-cyan);
-            color: #000;
-        }
-
-        /* 三轴加速度波形 */
-        .accel-charts {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-top: 4px;
-        }
-        .accel-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .accel-row .axis-label {
-            width: 24px;
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            text-align: right;
-        }
-        .accel-row .wave-container {
-            flex: 1;
-            height: 50px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
-        .accel-row .wave-container canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            touch-action: none;
-        }
-        .accel-row .wave-container .wave-label {
-            position: absolute;
-            bottom: 2px;
-            right: 6px;
-            font-size: 8px;
-            color: rgba(255, 255, 255, 0.2);
-            pointer-events: none;
-        }
-
-        .point-counter {
-            font-size: 11px;
-            color: var(--text-secondary);
-            font-weight: 400;
-            letter-spacing: 0.2px;
-        }
-
-        /* ===== Toast ===== */
-        .toast {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(12px);
-            padding: 12px 24px;
-            border-radius: 16px;
-            font-size: 14px;
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-            z-index: 999;
-            opacity: 0;
-            transform: translateX(-50%) translateY(20px);
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-            pointer-events: none;
-            max-width: 85%;
-            text-align: center;
-        }
-        .toast.show {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
-
-        /* ===== 响应式 ===== */
-        @media (max-width: 420px) {
-            .data-grid { grid-template-columns: repeat(3, 1fr); gap: 5px; }
-            .data-item .value { font-size: 15px; }
-            .app-title { font-size: 17px; }
-            .btn { font-size: 12px; padding: 8px 10px; min-width: 50px; }
-            .card { padding: 12px 14px; }
-            .accel-row .wave-container { height: 40px; }
-        }
-        @media (min-width: 600px) {
-            .chart-pair { flex-direction: row; }
-            .chart-pair .chart-container { flex: 1; aspect-ratio: 16/9; min-height: 220px; }
-        }
-
-        .app-scroll::-webkit-scrollbar { width: 3px; }
-        .app-scroll::-webkit-scrollbar-track { background: transparent; }
-        .app-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
-
-        .flex-row { display: flex; align-items: center; gap: 8px; }
-        .mt-1 { margin-top: 6px; }
-        .text-center { text-align: center; }
-        .w-full { width: 100%; }
-        .calib-info {
-            font-size: 11px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-        .calib-info span { color: var(--text-primary); }
+        .chart-container { position:relative; width:100%; aspect-ratio:16/9; min-height:180px; background:rgba(0,0,0,0.3); border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.04); }
+        .chart-container canvas { display:block; width:100%; height:100%; touch-action:none; }
+        .chart-container .chart-label { position:absolute; bottom:8px; left:12px; font-size:10px; color:rgba(255,255,255,0.25); pointer-events:none; }
+        .chart-container .chart-label-right { position:absolute; top:10px; right:12px; font-size:10px; color:rgba(255,255,255,0.2); text-align:right; }
+        .map-controls { display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap; }
+        .map-controls .btn { flex:0 0 auto; padding:6px 12px; font-size:16px; min-width:40px; background:rgba(255,255,255,0.08); }
+        .map-controls .btn.active { background:var(--accent-cyan); color:#000; }
+        .accel-charts { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+        .accel-row { display:flex; align-items:center; gap:8px; }
+        .accel-row .axis-label { width:24px; font-size:12px; font-weight:700; color:var(--text-secondary); text-align:right; }
+        .accel-row .wave-container { flex:1; height:50px; background:rgba(0,0,0,0.3); border-radius:8px; overflow:hidden; position:relative; }
+        .accel-row .wave-container canvas { display:block; width:100%; height:100%; touch-action:none; }
+        .point-counter { font-size:11px; color:var(--text-secondary); }
+        .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); backdrop-filter:blur(12px); padding:12px 24px; border-radius:16px; font-size:14px; color:#fff; border:1px solid rgba(255,255,255,0.08); box-shadow:0 8px 40px rgba(0,0,0,0.5); z-index:999; opacity:0; transform:translateX(-50%) translateY(20px); transition:all 0.4s cubic-bezier(0.16,1,0.3,1); pointer-events:none; max-width:85%; text-align:center; }
+        .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+        .flex-row { display:flex; align-items:center; gap:8px; }
+        .mt-1 { margin-top:6px; }
+        .calib-info { font-size:11px; color:var(--text-secondary); margin-top:4px; display:flex; gap:16px; flex-wrap:wrap; }
+        .calib-info span { color:var(--text-primary); }
+        @media (max-width:420px) { .data-grid { grid-template-columns:repeat(3,1fr); gap:5px; } .data-item .value { font-size:15px; } .app-title { font-size:17px; } .btn { font-size:12px; padding:8px 10px; min-width:50px; } .card { padding:12px 14px; } .accel-row .wave-container { height:40px; } }
+        @media (min-width:600px) { .chart-pair { flex-direction:row; } .chart-pair .chart-container { flex:1; aspect-ratio:16/9; min-height:220px; } }
+        .app-scroll::-webkit-scrollbar { width:3px; }
+        .app-scroll::-webkit-scrollbar-track { background:transparent; }
+        .app-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:10px; }
     </style>
 </head>
 <body>
 
-    <div id="toast" class="toast"></div>
+<div id="toast" class="toast"></div>
 
-    <div class="app-scroll" id="appScroll">
+<div class="app-scroll" id="appScroll">
 
-        <!-- ===== 头部 ===== -->
-        <div class="card header-card">
-            <div class="header-row">
-                <div class="app-title">
-                    🧭 运动追踪
-                    <small>标尺版</small>
-                </div>
-                <div class="status-badge">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">待机</span>
-                </div>
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-primary" id="btnStart">
-                    <span class="btn-icon">▶</span> 开始
-                </button>
-                <button class="btn btn-secondary" id="btnReset">
-                    <span class="btn-icon">⟳</span> 重置
-                </button>
-                <button class="btn btn-secondary" id="btnExport">
-                    <span class="btn-icon">⬇</span> 导出
-                </button>
-                <button class="btn btn-calibrate" id="btnCalibrate">
-                    <span class="btn-icon">⚖</span> 校准
-                </button>
-            </div>
-            <div class="flex-row mt-1" style="justify-content:space-between;">
-                <span style="font-size:11px;color:var(--text-secondary);">
-                    数据点: <strong id="pointCount">0</strong>
-                </span>
-                <span style="font-size:11px;color:var(--text-secondary);">
-                    时长: <strong id="durationDisplay">0s</strong>
-                </span>
-            </div>
-            <div class="calib-info" id="calibInfo">
-                <span>重力校准: <span id="calibStatus">未校准</span></span>
-                <span id="calibVector" style="display:none;">g: <span id="calibGx">0.00</span>, <span id="calibGy">0.00</span>, <span id="calibGz">0.00</span> m/s²</span>
+    <div class="card header-card">
+        <div class="header-row">
+            <div class="app-title">🧭 运动追踪 <small>朴素积分 · 1dm限制</small></div>
+            <div class="status-badge">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">待机</span>
             </div>
         </div>
-
-        <!-- ===== 数据面板 ===== -->
-        <div class="card">
-            <div class="card-title">
-                <span>📊 实时数据 (线性加速度)</span>
-                <span style="font-size:10px;color:var(--text-secondary);font-weight:400;">世界坐标系</span>
-            </div>
-            <div class="data-grid">
-                <div class="data-item">
-                    <div class="label">加速度</div>
-                    <div class="value cyan" id="dispAx">0.00 <span class="unit">m/s²</span></div>
-                    <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
-                        <span id="dispAy">0.00</span>
-                        <span id="dispAz">0.00</span>
-                    </div>
-                </div>
-                <div class="data-item">
-                    <div class="label">速度</div>
-                    <div class="value green" id="dispVx">0.00 <span class="unit">m/s</span></div>
-                    <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
-                        <span id="dispVy">0.00</span>
-                        <span id="dispVz">0.00</span>
-                    </div>
-                </div>
-                <div class="data-item">
-                    <div class="label">位置</div>
-                    <div class="value purple" id="dispPx">0.00 <span class="unit">m</span></div>
-                    <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
-                        <span id="dispPy">0.00</span>
-                        <span id="dispPz">0.00</span>
-                    </div>
-                </div>
-            </div>
-            <div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:11px;color:var(--text-secondary);">
-                <span>航向 α: <strong id="dispAlpha" style="color:#fff;">0.0°</strong></span>
-                <span>俯仰 β: <strong id="dispBeta" style="color:#fff;">0.0°</strong></span>
-                <span>横滚 γ: <strong id="dispGamma" style="color:#fff;">0.0°</strong></span>
-            </div>
+        <div class="btn-group">
+            <button class="btn btn-primary" id="btnStart"><span class="btn-icon">▶</span> 开始</button>
+            <button class="btn btn-secondary" id="btnReset"><span class="btn-icon">⟳</span> 重置</button>
+            <button class="btn btn-secondary" id="btnExport"><span class="btn-icon">⬇</span> 导出</button>
+            <button class="btn btn-calibrate" id="btnCalibrate"><span class="btn-icon">⚖</span> 校准</button>
         </div>
-
-        <!-- ===== 地图 ===== -->
-        <div class="card" style="padding-bottom:14px;">
-            <div class="card-title">
-                <span>🗺️ 路线图 (俯视 XY)</span>
-                <span class="point-counter" id="trailCount">0 点</span>
-            </div>
-            <div class="chart-container" id="mapContainer">
-                <canvas id="mapCanvas"></canvas>
-                <div class="chart-label">← X · Y →</div>
-                <div class="chart-label-right" id="mapInfo">就绪</div>
-            </div>
-            <div class="map-controls">
-                <button class="btn btn-secondary" id="mapZoomIn">＋</button>
-                <button class="btn btn-secondary" id="mapZoomOut">−</button>
-                <button class="btn btn-secondary active" id="mapAuto">自动</button>
-                <span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">速度色标</span>
-                <span style="display:inline-block;width:40px;height:6px;background:linear-gradient(to right, #00d4ff, #ff9100, #ff4081);border-radius:4px;"></span>
-            </div>
+        <div class="flex-row mt-1" style="justify-content:space-between;">
+            <span style="font-size:11px;color:var(--text-secondary);">数据点: <strong id="pointCount">0</strong></span>
+            <span style="font-size:11px;color:var(--text-secondary);">时长: <strong id="durationDisplay">0s</strong></span>
         </div>
-
-        <!-- ===== 高度曲线 ===== -->
-        <div class="card" style="padding-bottom:14px;">
-            <div class="card-title">
-                <span>📈 高度曲线 (Z) + 俯仰箭头</span>
-                <span class="point-counter" id="heightCount">0 点</span>
-            </div>
-            <div class="chart-container" id="heightContainer">
-                <canvas id="heightCanvas"></canvas>
-                <div class="chart-label">时间 →</div>
-                <div class="chart-label-right" id="heightInfo">就绪</div>
-            </div>
+        <div class="calib-info" id="calibInfo">
+            <span>重力校准: <span id="calibStatus">未校准</span></span>
+            <span id="calibVector" style="display:none;">g: <span id="calibGx">0.00</span>, <span id="calibGy">0.00</span>, <span id="calibGz">0.00</span> m/s²</span>
         </div>
-
-        <!-- ===== 三轴加速度波形 ===== -->
-        <div class="card">
-            <div class="card-title">
-                <span>📉 加速度波形 (可滑动)</span>
-                <span style="font-size:10px;color:var(--text-secondary);">← 滑动查看历史 →</span>
-            </div>
-            <div class="accel-charts" id="accelCharts">
-                <div class="accel-row">
-                    <span class="axis-label">X</span>
-                    <div class="wave-container" id="waveX">
-                        <canvas id="waveCanvasX"></canvas>
-                        <span class="wave-label" style="color:#00d4ff;">ax</span>
-                    </div>
-                </div>
-                <div class="accel-row">
-                    <span class="axis-label">Y</span>
-                    <div class="wave-container" id="waveY">
-                        <canvas id="waveCanvasY"></canvas>
-                        <span class="wave-label" style="color:#00e676;">ay</span>
-                    </div>
-                </div>
-                <div class="accel-row">
-                    <span class="axis-label">Z</span>
-                    <div class="wave-container" id="waveZ">
-                        <canvas id="waveCanvasZ"></canvas>
-                        <span class="wave-label" style="color:#7c4dff;">az</span>
-                    </div>
-                </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-secondary);">
-                <span id="waveInfo">窗口: 最新 200 点</span>
-                <span>拖动波形平移</span>
-            </div>
-        </div>
-
-        <div style="height:4px;"></div>
     </div>
 
-    <script>
-        (function() {
-            'use strict';
+    <div class="card">
+        <div class="card-title"><span>📊 实时数据 (线性加速度)</span><span style="font-size:10px;color:var(--text-secondary);">世界坐标系</span></div>
+        <div class="data-grid">
+            <div class="data-item">
+                <div class="label">加速度</div>
+                <div class="value cyan" id="dispAx">0.00 <span class="unit">m/s²</span></div>
+                <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
+                    <span id="dispAy">0.00</span> <span id="dispAz">0.00</span>
+                </div>
+            </div>
+            <div class="data-item">
+                <div class="label">速度</div>
+                <div class="value green" id="dispVx">0.00 <span class="unit">m/s</span></div>
+                <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
+                    <span id="dispVy">0.00</span> <span id="dispVz">0.00</span>
+                </div>
+            </div>
+            <div class="data-item">
+                <div class="label">位置</div>
+                <div class="value purple" id="dispPx">0.00 <span class="unit">m</span></div>
+                <div style="display:flex;justify-content:center;gap:12px;font-size:10px;color:var(--text-secondary);margin-top:2px;">
+                    <span id="dispPy">0.00</span> <span id="dispPz">0.00</span>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex;gap:16px;justify-content:center;margin-top:8px;font-size:11px;color:var(--text-secondary);">
+            <span>航向 α: <strong id="dispAlpha" style="color:#fff;">0.0°</strong></span>
+            <span>俯仰 β: <strong id="dispBeta" style="color:#fff;">0.0°</strong></span>
+            <span>横滚 γ: <strong id="dispGamma" style="color:#fff;">0.0°</strong></span>
+        </div>
+    </div>
 
-            // ================================================================
-            // DOM 引用
-            // ================================================================
-            const $ = (s) => document.querySelector(s);
-            const $$ = (s) => document.querySelectorAll(s);
+    <!-- 地图 -->
+    <div class="card" style="padding-bottom:14px;">
+        <div class="card-title"><span>🗺️ 路线图 (俯视 XY)</span><span class="point-counter" id="trailCount">0 点</span></div>
+        <div class="chart-container" id="mapContainer">
+            <canvas id="mapCanvas"></canvas>
+            <div class="chart-label">← X · Y → (最小刻度 0.1m)</div>
+            <div class="chart-label-right" id="mapInfo">就绪</div>
+        </div>
+        <div class="map-controls">
+            <button class="btn btn-secondary" id="mapZoomIn">＋</button>
+            <button class="btn btn-secondary" id="mapZoomOut">−</button>
+            <button class="btn btn-secondary active" id="mapAuto">自动</button>
+            <span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">速度色标</span>
+            <span style="display:inline-block;width:40px;height:6px;background:linear-gradient(to right, #00d4ff, #ff9100, #ff4081);border-radius:4px;"></span>
+        </div>
+    </div>
 
-            const statusDot = $('#statusDot');
-            const statusText = $('#statusText');
-            const btnStart = $('#btnStart');
-            const btnReset = $('#btnReset');
-            const btnExport = $('#btnExport');
-            const btnCalibrate = $('#btnCalibrate');
-            const pointCount = $('#pointCount');
-            const durationDisplay = $('#durationDisplay');
-            const toast = $('#toast');
+    <!-- 高度曲线 -->
+    <div class="card" style="padding-bottom:14px;">
+        <div class="card-title"><span>📈 高度曲线 (Z) + 俯仰箭头</span><span class="point-counter" id="heightCount">0 点</span></div>
+        <div class="chart-container" id="heightContainer">
+            <canvas id="heightCanvas"></canvas>
+            <div class="chart-label">时间 →</div>
+            <div class="chart-label-right" id="heightInfo">就绪</div>
+        </div>
+    </div>
 
-            const dispAx = $('#dispAx'), dispAy = $('#dispAy'), dispAz = $('#dispAz');
-            const dispVx = $('#dispVx'), dispVy = $('#dispVy'), dispVz = $('#dispVz');
-            const dispPx = $('#dispPx'), dispPy = $('#dispPy'), dispPz = $('#dispPz');
-            const dispAlpha = $('#dispAlpha'), dispBeta = $('#dispBeta'), dispGamma = $('#dispGamma');
-            const calibStatus = $('#calibStatus');
-            const calibVector = $('#calibVector');
-            const calibGx = $('#calibGx'), calibGy = $('#calibGy'), calibGz = $('#calibGz');
+    <!-- 三轴加速度波形 -->
+    <div class="card">
+        <div class="card-title"><span>📉 加速度波形 (可滑动)</span><span style="font-size:10px;color:var(--text-secondary);">← 滑动查看历史 →</span></div>
+        <div class="accel-charts" id="accelCharts">
+            <div class="accel-row"><span class="axis-label">X</span><div class="wave-container" id="waveX"><canvas id="waveCanvasX"></canvas><span class="wave-label" style="color:#00d4ff;">ax</span></div></div>
+            <div class="accel-row"><span class="axis-label">Y</span><div class="wave-container" id="waveY"><canvas id="waveCanvasY"></canvas><span class="wave-label" style="color:#00e676;">ay</span></div></div>
+            <div class="accel-row"><span class="axis-label">Z</span><div class="wave-container" id="waveZ"><canvas id="waveCanvasZ"></canvas><span class="wave-label" style="color:#7c4dff;">az</span></div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--text-secondary);">
+            <span id="waveInfo">窗口: 最新 200 点</span>
+            <span>拖动波形平移</span>
+        </div>
+    </div>
+    <div style="height:4px;"></div>
+</div>
 
-            const mapCanvas = $('#mapCanvas');
-            const heightCanvas = $('#heightCanvas');
-            const mapContainer = $('#mapContainer');
-            const heightContainer = $('#heightContainer');
-            const trailCount = $('#trailCount');
-            const heightCount = $('#heightCount');
-            const mapInfo = $('#mapInfo');
-            const heightInfo = $('#heightInfo');
+<script>
+(function(){
+    'use strict';
 
-            const waveCanvasX = $('#waveCanvasX');
-            const waveCanvasY = $('#waveCanvasY');
-            const waveCanvasZ = $('#waveCanvasZ');
-            const waveContainers = [document.getElementById('waveX'), document.getElementById('waveY'), document.getElementById(
-                'waveZ')];
-            const waveInfo = $('#waveInfo');
+    // ---------- DOM ----------
+    const $ = (s) => document.querySelector(s);
+    const statusDot = $('#statusDot');
+    const statusText = $('#statusText');
+    const btnStart = $('#btnStart');
+    const btnReset = $('#btnReset');
+    const btnExport = $('#btnExport');
+    const btnCalibrate = $('#btnCalibrate');
+    const pointCount = $('#pointCount');
+    const durationDisplay = $('#durationDisplay');
+    const toast = $('#toast');
 
-            const mapZoomIn = $('#mapZoomIn');
-            const mapZoomOut = $('#mapZoomOut');
-            const mapAuto = $('#mapAuto');
+    const dispAx = $('#dispAx'), dispAy = $('#dispAy'), dispAz = $('#dispAz');
+    const dispVx = $('#dispVx'), dispVy = $('#dispVy'), dispVz = $('#dispVz');
+    const dispPx = $('#dispPx'), dispPy = $('#dispPy'), dispPz = $('#dispPz');
+    const dispAlpha = $('#dispAlpha'), dispBeta = $('#dispBeta'), dispGamma = $('#dispGamma');
+    const calibStatus = $('#calibStatus');
+    const calibVector = $('#calibVector');
+    const calibGx = $('#calibGx'), calibGy = $('#calibGy'), calibGz = $('#calibGz');
 
-            let toastTimer = null;
+    const mapCanvas = $('#mapCanvas');
+    const heightCanvas = $('#heightCanvas');
+    const mapContainer = $('#mapContainer');
+    const heightContainer = $('#heightContainer');
+    const trailCount = $('#trailCount');
+    const heightCount = $('#heightCount');
+    const mapInfo = $('#mapInfo');
+    const heightInfo = $('#heightInfo');
 
-            // ================================================================
-            // 状态
-            // ================================================================
-            const STATE = { IDLE: 'idle', RECORDING: 'recording', ERROR: 'error' };
-            let state = STATE.IDLE;
-            let isRecording = false;
-            let startTime = 0;
-            let lastTimestamp = 0;
-            let dataCount = 0;
+    const waveCanvasX = $('#waveCanvasX');
+    const waveCanvasY = $('#waveCanvasY');
+    const waveCanvasZ = $('#waveCanvasZ');
+    const waveContainers = [document.getElementById('waveX'), document.getElementById('waveY'), document.getElementById('waveZ')];
+    const waveInfo = $('#waveInfo');
 
-            let hasSensor = false;
-            let sensorReady = false;
+    const mapZoomIn = $('#mapZoomIn');
+    const mapZoomOut = $('#mapZoomOut');
+    const mapAuto = $('#mapAuto');
 
-            // 重力校准向量 (世界坐标系)
-            let calibGravity = { x: 0, y: 0, z: 0 };
-            let isCalibrated = false;
-            let isCalibrating = false;
-            let calibSamples = [];
+    let toastTimer = null;
 
-            // 数据缓冲区
-            const history = {
-                time: [],
-                ax: [], ay: [], az: [],
-                vx: [], vy: [], vz: [],
-                px: [], py: [], pz: [],
-            };
+    // ---------- 状态 ----------
+    let isRecording = false;
+    let startTime = 0;
+    let lastSensorTime = 0;
+    let dataCount = 0;
 
-            // 当前值 (线性加速度)
-            let current = {
-                ax: 0, ay: 0, az: 0,
-                vx: 0, vy: 0, vz: 0,
-                px: 0, py: 0, pz: 0,
-            };
+    let hasOrientation = false;
+    let orientation = { alpha: 0, beta: 0, gamma: 0 };
 
-            // 姿态
-            let orientation = { alpha: 0, beta: 0, gamma: 0 };
-            let hasOrientation = false;
+    // 重力校准
+    let calibGravity = { x: 0, y: 0, z: 0 };
+    let isCalibrated = false;
+    let isCalibrating = false;
+    let calibSamples = [];
 
-            // 滤波
-            const FILTER = {
-                alphaAccel: 0.25,
-                alphaVelocity: 0.92,
-                driftThreshold: 0.02,
-            };
+    // 历史数据
+    const history = {
+        time: [], ax: [], ay: [], az: [],
+        vx: [], vy: [], vz: [],
+        px: [], py: [], pz: []
+    };
 
-            let prevAx = 0, prevAy = 0, prevAz = 0;
-            let prevVx = 0, prevVy = 0, prevVz = 0;
+    // 当前值
+    let current = {
+        ax: 0, ay: 0, az: 0,
+        vx: 0, vy: 0, vz: 0,
+        px: 0, py: 0, pz: 0
+    };
 
-            // ================================================================
-            // 地图视图控制
-            // ================================================================
-            const mapView = {
-                minX: -10, maxX: 10, minY: -10, maxY: 10,
-                autoScale: true,
-                zoomFactor: 0.8,
-            };
+    // ---------- 朴素积分 ----------
+    function integrate(ax, ay, az, dt) {
+        current.vx += ax * dt;
+        current.vy += ay * dt;
+        current.vz += az * dt;
+        current.px += current.vx * dt + 0.5 * ax * dt * dt;
+        current.py += current.vy * dt + 0.5 * ay * dt * dt;
+        current.pz += current.vz * dt + 0.5 * az * dt * dt;
+        current.ax = ax;
+        current.ay = ay;
+        current.az = az;
+    }
 
-            function computeAutoScale() {
-                if (history.px.length < 2) {
-                    mapView.minX = -10; mapView.maxX = 10;
-                    mapView.minY = -10; mapView.maxY = 10;
-                    return;
-                }
-                let minX = Math.min(...history.px);
-                let maxX = Math.max(...history.px);
-                let minY = Math.min(...history.py);
-                let maxY = Math.max(...history.py);
-                const rangeX = maxX - minX || 1;
-                const rangeY = maxY - minY || 1;
-                const margin = 0.2;
-                mapView.minX = minX - rangeX * margin;
-                mapView.maxX = maxX + rangeX * margin;
-                mapView.minY = minY - rangeY * margin;
-                mapView.maxY = maxY + rangeY * margin;
+    // ---------- 坐标变换 ----------
+    function degToRad(deg) { return deg * Math.PI / 180; }
+    function buildRotationMatrix(alphaDeg, betaDeg, gammaDeg) {
+        const a = degToRad(alphaDeg), b = degToRad(betaDeg), g = degToRad(gammaDeg);
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const cb = Math.cos(b), sb = Math.sin(b);
+        const cg = Math.cos(g), sg = Math.sin(g);
+        const Rz = [[ca, -sa, 0], [sa, ca, 0], [0, 0, 1]];
+        const Rx = [[1, 0, 0], [0, cb, -sb], [0, sb, cb]];
+        const Ry = [[cg, 0, sg], [0, 1, 0], [-sg, 0, cg]];
+        function matMul(A, B) {
+            const C = [[0,0,0],[0,0,0],[0,0,0]];
+            for (let i=0; i<3; i++) for (let j=0; j<3; j++) for (let k=0; k<3; k++) C[i][j] += A[i][k]*B[k][j];
+            return C;
+        }
+        const RzRx = matMul(Rz, Rx);
+        return matMul(RzRx, Ry);
+    }
+    function transformAccel(ax, ay, az, alpha, beta, gamma) {
+        const R = buildRotationMatrix(alpha, beta, gamma);
+        const wx = R[0][0]*ax + R[0][1]*ay + R[0][2]*az;
+        const wy = R[1][0]*ax + R[1][1]*ay + R[1][2]*az;
+        const wz = R[2][0]*ax + R[2][1]*ay + R[2][2]*az;
+        return { wx, wy, wz };
+    }
+
+    // ---------- 传感器 ----------
+    function onDeviceMotion(event) {
+        if (!isRecording) return;
+        const accel = event.acceleration;
+        if (!accel) return;
+        const ax = accel.x || 0, ay = accel.y || 0, az = accel.z || 0;
+        const now = performance.now();
+        let dt = (now - lastSensorTime) / 1000;
+        if (lastSensorTime === 0) dt = 0.016;
+        if (dt > 0.05) dt = 0.016;
+        lastSensorTime = now;
+
+        const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
+        let linX = world.wx, linY = world.wy, linZ = world.wz;
+        if (isCalibrated) {
+            linX -= calibGravity.x;
+            linY -= calibGravity.y;
+            linZ -= calibGravity.z;
+        }
+
+        integrate(linX, linY, linZ, dt);
+
+        const t = (now - startTime) / 1000;
+        history.time.push(t);
+        history.ax.push(linX);
+        history.ay.push(linY);
+        history.az.push(linZ);
+        history.vx.push(current.vx);
+        history.vy.push(current.vy);
+        history.vz.push(current.vz);
+        history.px.push(current.px);
+        history.py.push(current.py);
+        history.pz.push(current.pz);
+
+        if (history.time.length > 3000) {
+            const trim = history.time.length - 3000;
+            for (let key in history) history[key].splice(0, trim);
+        }
+        dataCount = history.time.length;
+    }
+
+    function onDeviceOrientation(event) {
+        orientation.alpha = event.alpha || 0;
+        orientation.beta = event.beta || 0;
+        orientation.gamma = event.gamma || 0;
+        hasOrientation = true;
+    }
+
+    // ---------- 重力校准 ----------
+    function performCalibration() {
+        if (isCalibrating) return;
+        isCalibrating = true;
+        btnCalibrate.textContent = '校准中…';
+        btnCalibrate.disabled = true;
+        calibSamples = [];
+        showToast('⚖ 请保持设备静止 2 秒…', 2500);
+
+        let count = 0;
+        const maxSamples = 60;
+        function collect(e) {
+            const accel = e.acceleration;
+            if (!accel) return;
+            const ax = accel.x||0, ay = accel.y||0, az = accel.z||0;
+            const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
+            calibSamples.push({ wx: world.wx, wy: world.wy, wz: world.wz });
+            count++;
+            if (count >= maxSamples) {
+                window.removeEventListener('devicemotion', collect);
+                let sumX=0, sumY=0, sumZ=0;
+                for (let s of calibSamples) { sumX += s.wx; sumY += s.wy; sumZ += s.wz; }
+                calibGravity.x = sumX / calibSamples.length;
+                calibGravity.y = sumY / calibSamples.length;
+                calibGravity.z = sumZ / calibSamples.length;
+                isCalibrated = true;
+                isCalibrating = false;
+                btnCalibrate.textContent = '⚖ 校准';
+                btnCalibrate.disabled = false;
+                btnCalibrate.classList.add('active');
+                calibStatus.textContent = '已校准';
+                calibVector.style.display = 'inline';
+                calibGx.textContent = calibGravity.x.toFixed(2);
+                calibGy.textContent = calibGravity.y.toFixed(2);
+                calibGz.textContent = calibGravity.z.toFixed(2);
+                statusDot.className = 'status-dot calibrated';
+                showToast('✅ 重力校准完成', 1500);
+                // 重置积分
+                current.vx = 0; current.vy = 0; current.vz = 0;
+                current.px = 0; current.py = 0; current.pz = 0;
+                for (let key in history) history[key] = [];
+                dataCount = 0;
+                pointCount.textContent = '0';
+                durationDisplay.textContent = '0s';
             }
-
-            function applyZoom(factor) {
-                const cx = (mapView.minX + mapView.maxX) / 2;
-                const cy = (mapView.minY + mapView.maxY) / 2;
-                const halfW = (mapView.maxX - mapView.minX) / 2 * factor;
-                const halfH = (mapView.maxY - mapView.minY) / 2 * factor;
-                mapView.minX = cx - halfW;
-                mapView.maxX = cx + halfW;
-                mapView.minY = cy - halfH;
-                mapView.maxY = cy + halfH;
-                mapView.autoScale = false;
-                mapAuto.classList.remove('active');
-            }
-
-            function setAutoScale() {
-                mapView.autoScale = true;
-                mapAuto.classList.add('active');
-                computeAutoScale();
-                drawMap();
-            }
-
-            // ================================================================
-            // 加速度波形窗口 (滑动)
-            // ================================================================
-            const waveWindow = {
-                start: 0, end: 0, total: 0,
-                maxPoints: 200,
-                userSlid: false,
-            };
-
-            function updateWaveWindow() {
-                const n = history.time.length;
-                waveWindow.total = n;
-                if (n === 0) { waveWindow.start = 0; waveWindow.end = 0; return; }
-                if (!waveWindow.userSlid) {
-                    waveWindow.end = n;
-                    waveWindow.start = Math.max(0, n - waveWindow.maxPoints);
+        }
+        window.addEventListener('devicemotion', collect, { passive: true });
+        setTimeout(() => {
+            if (isCalibrating && count < maxSamples) {
+                window.removeEventListener('devicemotion', collect);
+                if (count > 5) {
+                    let sumX=0, sumY=0, sumZ=0;
+                    for (let s of calibSamples) { sumX += s.wx; sumY += s.wy; sumZ += s.wz; }
+                    calibGravity.x = sumX / calibSamples.length;
+                    calibGravity.y = sumY / calibSamples.length;
+                    calibGravity.z = sumZ / calibSamples.length;
+                    isCalibrated = true;
+                    isCalibrating = false;
+                    btnCalibrate.textContent = '⚖ 校准';
+                    btnCalibrate.disabled = false;
+                    btnCalibrate.classList.add('active');
+                    calibStatus.textContent = '已校准';
+                    calibVector.style.display = 'inline';
+                    calibGx.textContent = calibGravity.x.toFixed(2);
+                    calibGy.textContent = calibGravity.y.toFixed(2);
+                    calibGz.textContent = calibGravity.z.toFixed(2);
+                    statusDot.className = 'status-dot calibrated';
+                    showToast('⚖ 校准完成 (部分数据)', 1500);
+                    current.vx = 0; current.vy = 0; current.vz = 0;
+                    current.px = 0; current.py = 0; current.pz = 0;
+                    for (let key in history) history[key] = [];
+                    dataCount = 0;
+                    pointCount.textContent = '0';
                 } else {
-                    if (waveWindow.end > n) { waveWindow.end = n; waveWindow.start = Math.max(0, n - (waveWindow.end -
-                        waveWindow.start)); }
-                    if (waveWindow.start < 0) waveWindow.start = 0;
-                    if (waveWindow.end > n) waveWindow.end = n;
-                    if (waveWindow.end - waveWindow.start > waveWindow.maxPoints) {
-                        waveWindow.start = waveWindow.end - waveWindow.maxPoints;
-                    }
+                    isCalibrating = false;
+                    btnCalibrate.textContent = '⚖ 校准';
+                    btnCalibrate.disabled = false;
+                    showToast('⚠️ 校准失败，数据不足', 2000);
                 }
-                if (waveWindow.end - waveWindow.start < 2) {
-                    waveWindow.start = Math.max(0, n - 2);
-                    waveWindow.end = n;
-                }
-                waveInfo.textContent = `窗口: ${waveWindow.start}~${waveWindow.end-1} (共${n}点)`;
+            }
+        }, 3000);
+    }
+
+    // ---------- 绘图辅助 ----------
+    function resizeCanvas(canvas, container) {
+        const rect = container.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = rect.width || container.clientWidth || 300;
+        const h = rect.height || container.clientHeight || 200;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        return { w, h, ctx };
+    }
+
+    function drawAxisTicks(ctx, w, h, margin, xMin, xMax, yMin, yMax, xUnit, yUnit, xLabel, yLabel) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(margin, margin, w - 2*margin, h - 2*margin);
+
+        const xRange = xMax - xMin || 1;
+        const numXTicks = Math.min(6, Math.floor((w - 2*margin) / 60));
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let i=0; i<=numXTicks; i++) {
+            const t = i / numXTicks;
+            const x = margin + t * (w - 2*margin);
+            const val = xMin + t * xRange;
+            ctx.fillText(val.toFixed(1), x, h - margin + 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(x, h - margin);
+            ctx.lineTo(x, h - margin + 4);
+            ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = '7px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(xLabel, w/2, h - margin + 12);
+
+        const yRange = yMax - yMin || 1;
+        const numYTicks = Math.min(5, Math.floor((h - 2*margin) / 50));
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        for (let i=0; i<=numYTicks; i++) {
+            const t = i / numYTicks;
+            const y = margin + (1 - t) * (h - 2*margin);
+            const val = yMin + t * yRange;
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillText(val.toFixed(1), margin - 4, y);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(margin, y);
+            ctx.lineTo(margin - 4, y);
+            ctx.stroke();
+        }
+        ctx.save();
+        ctx.translate(12, h/2);
+        ctx.rotate(-Math.PI/2);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = '7px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(yLabel, 0, 0);
+        ctx.restore();
+        ctx.restore();
+    }
+
+    // ---------- 地图视图 ----------
+    const MIN_RANGE = 0.1; // 最小显示范围 0.1米 (1分米)
+    const mapView = { minX: -10, maxX: 10, minY: -10, maxY: 10, autoScale: true };
+    function enforceMinRange() {
+        if (mapView.maxX - mapView.minX < MIN_RANGE) {
+            const cx = (mapView.minX + mapView.maxX) / 2;
+            mapView.minX = cx - MIN_RANGE/2;
+            mapView.maxX = cx + MIN_RANGE/2;
+        }
+        if (mapView.maxY - mapView.minY < MIN_RANGE) {
+            const cy = (mapView.minY + mapView.maxY) / 2;
+            mapView.minY = cy - MIN_RANGE/2;
+            mapView.maxY = cy + MIN_RANGE/2;
+        }
+    }
+    function computeAutoScale() {
+        if (history.px.length < 2) return;
+        let minX = Math.min(...history.px), maxX = Math.max(...history.px);
+        let minY = Math.min(...history.py), maxY = Math.max(...history.py);
+        let rangeX = maxX - minX || 1;
+        let rangeY = maxY - minY || 1;
+        const margin = 0.2;
+        mapView.minX = minX - rangeX * margin;
+        mapView.maxX = maxX + rangeX * margin;
+        mapView.minY = minY - rangeY * margin;
+        mapView.maxY = maxY + rangeY * margin;
+        enforceMinRange();
+    }
+    function applyZoom(factor) {
+        const cx = (mapView.minX + mapView.maxX)/2, cy = (mapView.minY + mapView.maxY)/2;
+        let halfW = (mapView.maxX - mapView.minX)/2 * factor;
+        let halfH = (mapView.maxY - mapView.minY)/2 * factor;
+        if (halfW * 2 < MIN_RANGE) halfW = MIN_RANGE/2;
+        if (halfH * 2 < MIN_RANGE) halfH = MIN_RANGE/2;
+        mapView.minX = cx - halfW; mapView.maxX = cx + halfW;
+        mapView.minY = cy - halfH; mapView.maxY = cy + halfH;
+        mapView.autoScale = false;
+        mapAuto.classList.remove('active');
+    }
+    function setAutoScale() { mapView.autoScale = true; mapAuto.classList.add('active'); computeAutoScale(); drawMap(); }
+
+    // ---------- 绘图函数 ----------
+    function drawMap() {
+        const { w, h, ctx } = resizeCanvas(mapCanvas, mapContainer);
+        ctx.clearRect(0,0,w,h);
+        const grad = ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,Math.max(w,h)*0.7);
+        grad.addColorStop(0, 'rgba(20,30,60,0.3)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0,0,w,h);
+
+        if (history.px.length < 2) {
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('等待数据…', w/2, h/2);
+            return;
+        }
+
+        if (mapView.autoScale) computeAutoScale();
+        enforceMinRange();
+        const margin = 32;
+        const plotW = w - 2*margin, plotH = h - 2*margin;
+        const minX = mapView.minX, maxX = mapView.maxX;
+        const minY = mapView.minY, maxY = mapView.maxY;
+        function mapX(vx) { return margin + (vx - minX) / (maxX - minX) * plotW; }
+        function mapY(vy) { return margin + (vy - minY) / (maxY - minY) * plotH; }
+
+        // 网格
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 0.5;
+        for (let i=0; i<=8; i++) {
+            const x = margin + (i/8)*plotW, y = margin + (i/8)*plotH;
+            ctx.beginPath(); ctx.moveTo(x, margin); ctx.lineTo(x, margin+plotH); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin+plotW, y); ctx.stroke();
+        }
+
+        // 轨迹
+        const len = history.px.length;
+        let maxSpeed = 0;
+        for (let i=0; i<len; i++) {
+            const spd = Math.sqrt(history.vx[i]*history.vx[i] + history.vy[i]*history.vy[i]);
+            if (spd > maxSpeed) maxSpeed = spd;
+        }
+        maxSpeed = Math.max(maxSpeed, 0.01);
+        for (let i=1; i<len; i++) {
+            const x1 = mapX(history.px[i-1]), y1 = mapY(history.py[i-1]);
+            const x2 = mapX(history.px[i]), y2 = mapY(history.py[i]);
+            const spd = Math.sqrt(history.vx[i]*history.vx[i] + history.vy[i]*history.vy[i]);
+            const t = Math.min(spd / maxSpeed, 1);
+            const hue = 220 - t * 200;
+            const light = 50 + t * 30;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = `hsl(${hue}, 90%, ${light}%)`;
+            ctx.lineWidth = 2.5 + 1.5 * t;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+        }
+
+        // 当前位置
+        const lastX = mapX(history.px[len-1]), lastY = mapY(history.py[len-1]);
+        const glow = ctx.createRadialGradient(lastX, lastY, 0, lastX, lastY, 18);
+        glow.addColorStop(0, 'rgba(0,212,255,0.9)');
+        glow.addColorStop(0.3, 'rgba(0,212,255,0.4)');
+        glow.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 18, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
+        ctx.fill();
+
+        // 起点
+        if (len > 1) {
+            const sx = mapX(history.px[0]), sy = mapY(history.py[0]);
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.beginPath();
+            ctx.arc(sx, sy, 5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('● 起点', sx, sy + 8);
+        }
+
+        // 陀螺仪方向箭头
+        if (hasOrientation && len > 0) {
+            const alphaRad = degToRad(orientation.alpha);
+            const arrowLen = 25;
+            const endX = lastX + arrowLen * Math.sin(alphaRad);
+            const endY = lastY - arrowLen * Math.cos(alphaRad);
+            ctx.save();
+            ctx.strokeStyle = '#ff4081';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+            const headLen = 10;
+            const angle = Math.atan2(endY - lastY, endX - lastX);
+            ctx.fillStyle = '#ff4081';
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - 0.5), endY - headLen * Math.sin(angle - 0.5));
+            ctx.lineTo(endX - headLen * Math.cos(angle + 0.5), endY - headLen * Math.sin(angle + 0.5));
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 标尺
+        drawAxisTicks(ctx, w, h, margin, minX, maxX, minY, maxY, 'm', 'm', 'X (m)', 'Y (m)');
+
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`位移: ${Math.sqrt(current.px*current.px + current.py*current.py).toFixed(2)}m`, margin, margin + plotH - 4);
+        const dist = Math.sqrt(current.px*current.px + current.py*current.py);
+        mapInfo.textContent = `位移 ${dist.toFixed(2)}m · 点数 ${len}`;
+        trailCount.textContent = `${len} 点`;
+    }
+
+    // ---------- 高度曲线 ----------
+    function drawHeight() {
+        const { w, h, ctx } = resizeCanvas(heightCanvas, heightContainer);
+        ctx.clearRect(0,0,w,h);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(0,0,w,h);
+
+        if (history.pz.length < 2) {
+            ctx.fillStyle = 'rgba(255,255,255,0.15)';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('等待数据…', w/2, h/2);
+            return;
+        }
+
+        const pzArr = history.pz, timeArr = history.time;
+        const len = pzArr.length;
+        let minZ = Math.min(...pzArr), maxZ = Math.max(...pzArr);
+        const rangeZ = maxZ - minZ || 1;
+        const margin = 32;
+        const plotW = w - 2*margin, plotH = h - 2*margin;
+        const t0 = timeArr[0], t1 = timeArr[timeArr.length-1];
+        const tRange = t1 - t0 || 1;
+
+        function mapX(t) { return margin + (t - t0) / tRange * plotW; }
+        function mapY(z) { return margin + (maxZ - z) / rangeZ * plotH; }
+
+        // 零线
+        const zeroY = mapY(0);
+        if (zeroY >= margin && zeroY <= margin + plotH) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3,5]);
+            ctx.beginPath();
+            ctx.moveTo(margin, zeroY);
+            ctx.lineTo(margin + plotW, zeroY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 填充
+        ctx.beginPath();
+        ctx.moveTo(mapX(timeArr[0]), margin + plotH);
+        for (let i=0; i<len; i++) {
+            ctx.lineTo(mapX(timeArr[i]), mapY(pzArr[i]));
+        }
+        ctx.lineTo(mapX(timeArr[len-1]), margin + plotH);
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, margin, 0, margin + plotH);
+        grad.addColorStop(0, 'rgba(124,77,255,0.25)');
+        grad.addColorStop(0.5, 'rgba(124,77,255,0.08)');
+        grad.addColorStop(1, 'rgba(124,77,255,0.01)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // 曲线
+        ctx.beginPath();
+        for (let i=0; i<len; i++) {
+            const x = mapX(timeArr[i]), y = mapY(pzArr[i]);
+            if (i===0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = '#7c4dff';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = 'rgba(124,77,255,0.3)';
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 当前位置
+        const lastX = mapX(timeArr[len-1]), lastY = mapY(pzArr[len-1]);
+        ctx.fillStyle = '#7c4dff';
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(124,77,255,0.15)';
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 12, 0, Math.PI*2);
+        ctx.fill();
+
+        // 俯仰箭头
+        if (hasOrientation) {
+            const betaRad = degToRad(orientation.beta);
+            const arrowLen = 20;
+            const dir = -Math.sin(betaRad);
+            const endY2 = lastY + dir * arrowLen;
+            ctx.save();
+            ctx.strokeStyle = '#ff9100';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(lastX, endY2);
+            ctx.stroke();
+            const headLen2 = 8;
+            const angle2 = dir > 0 ? -Math.PI/2 : Math.PI/2;
+            ctx.fillStyle = '#ff9100';
+            ctx.beginPath();
+            ctx.moveTo(lastX, endY2);
+            ctx.lineTo(lastX - headLen2*0.5, endY2 - dir*headLen2*0.866);
+            ctx.lineTo(lastX + headLen2*0.5, endY2 - dir*headLen2*0.866);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        drawAxisTicks(ctx, w, h, margin, t0, t1, minZ, maxZ, 's', 'm', '时间 (s)', '高度 (m)');
+
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`Z: ${current.pz.toFixed(3)}m`, margin, margin + plotH - 4);
+        heightInfo.textContent = `高度 ${current.pz.toFixed(3)}m · 变化 ${(maxZ-minZ).toFixed(3)}m`;
+        heightCount.textContent = `${len} 点`;
+    }
+
+    // ---------- 加速度波形 ----------
+    const waveWindow = { start: 0, end: 0, maxPoints: 200, userSlid: false };
+    function updateWaveWindow() {
+        const n = history.time.length;
+        if (n === 0) { waveWindow.start = 0; waveWindow.end = 0; return; }
+        if (!waveWindow.userSlid) {
+            waveWindow.end = n;
+            waveWindow.start = Math.max(0, n - waveWindow.maxPoints);
+        } else {
+            if (waveWindow.end > n) { waveWindow.end = n; waveWindow.start = Math.max(0, n - (waveWindow.end - waveWindow.start)); }
+            if (waveWindow.start < 0) waveWindow.start = 0;
+            if (waveWindow.end > n) waveWindow.end = n;
+            if (waveWindow.end - waveWindow.start > waveWindow.maxPoints) waveWindow.start = waveWindow.end - waveWindow.maxPoints;
+        }
+        if (waveWindow.end - waveWindow.start < 2) {
+            waveWindow.start = Math.max(0, n - 2);
+            waveWindow.end = n;
+        }
+        waveInfo.textContent = `窗口: ${waveWindow.start}~${waveWindow.end-1} (共${n}点)`;
+    }
+    function slideWaveWindow(delta) {
+        const n = history.time.length;
+        if (n === 0) return;
+        const range = waveWindow.end - waveWindow.start;
+        let newStart = waveWindow.start + delta;
+        let newEnd = waveWindow.end + delta;
+        if (newStart < 0) { newStart = 0; newEnd = Math.min(range, n); }
+        if (newEnd > n) { newEnd = n; newStart = Math.max(0, n - range); }
+        if (newEnd - newStart < 2) return;
+        waveWindow.start = newStart;
+        waveWindow.end = newEnd;
+        waveWindow.userSlid = true;
+        drawWaveforms();
+    }
+
+    function drawWaveforms() {
+        const axes = ['ax', 'ay', 'az'];
+        const colors = ['#00d4ff', '#00e676', '#7c4dff'];
+        const canvases = [waveCanvasX, waveCanvasY, waveCanvasZ];
+        const containers = waveContainers;
+
+        const n = history.time.length;
+        if (n === 0) {
+            for (let i=0; i<3; i++) {
+                const canvas = canvases[i];
+                const container = containers[i];
+                const { w, h, ctx } = resizeCanvas(canvas, container);
+                ctx.clearRect(0,0,w,h);
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('无数据', w/2, h/2);
+            }
+            return;
+        }
+
+        updateWaveWindow();
+        const startIdx = waveWindow.start;
+        const endIdx = waveWindow.end;
+        const count = endIdx - startIdx;
+        if (count < 2) {
+            for (let i=0; i<3; i++) {
+                const canvas = canvases[i];
+                const container = containers[i];
+                const { w, h, ctx } = resizeCanvas(canvas, container);
+                ctx.clearRect(0,0,w,h);
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('数据不足', w/2, h/2);
+            }
+            return;
+        }
+
+        for (let idx=0; idx<3; idx++) {
+            const canvas = canvases[idx];
+            const container = containers[idx];
+            const { w, h, ctx } = resizeCanvas(canvas, container);
+            ctx.clearRect(0,0,w,h);
+
+            const dataArr = history[axes[idx]];
+            const slice = dataArr.slice(startIdx, endIdx);
+            const timeSlice = history.time.slice(startIdx, endIdx);
+            let minVal = Math.min(...slice);
+            let maxVal = Math.max(...slice);
+            const range = maxVal - minVal || 0.01;
+            const margin = 18;
+            const plotW = w - 2*margin;
+            const plotH = h - 2*margin;
+
+            function mapY2(val) { return margin + (maxVal - val) / range * plotH; }
+            function mapX2(i) { return margin + (i / (count-1)) * plotW; }
+
+            // 网格
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 0.5;
+            for (let i=0; i<5; i++) {
+                const y = margin + (i/4) * plotH;
+                ctx.beginPath();
+                ctx.moveTo(margin, y);
+                ctx.lineTo(margin + plotW, y);
+                ctx.stroke();
             }
 
-            function slideWaveWindow(delta) {
+            // 零线
+            const zeroY2 = mapY2(0);
+            if (zeroY2 >= margin && zeroY2 <= margin + plotH) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2,3]);
+                ctx.beginPath();
+                ctx.moveTo(margin, zeroY2);
+                ctx.lineTo(margin + plotW, zeroY2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // 曲线
+            ctx.beginPath();
+            for (let i=0; i<count; i++) {
+                const x = mapX2(i);
+                const y = mapY2(slice[i]);
+                if (i===0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = colors[idx];
+            ctx.lineWidth = 1.8;
+            ctx.shadowColor = colors[idx] + '40';
+            ctx.shadowBlur = 6;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            if (count > 0) {
+                const lastVal = slice[count-1];
+                const lx = mapX2(count-1);
+                const ly = mapY2(lastVal);
+                ctx.fillStyle = colors[idx];
+                ctx.beginPath();
+                ctx.arc(lx, ly, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // 标尺 (X轴时间)
+            const tStart = timeSlice[0];
+            const tEnd = timeSlice[timeSlice.length-1];
+            const tRange2 = tEnd - tStart || 1;
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(margin, margin, plotW, plotH);
+            const numXTicks2 = Math.min(4, Math.floor(plotW / 50));
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.font = '7px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            for (let i=0; i<=numXTicks2; i++) {
+                const t = i / numXTicks2;
+                const x = margin + t * plotW;
+                const val = tStart + t * tRange2;
+                ctx.fillText(val.toFixed(1), x, margin + plotH + 2);
+                ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(x, margin + plotH);
+                ctx.lineTo(x, margin + plotH + 4);
+                ctx.stroke();
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = '6px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('时间 (s)', margin + plotW/2, margin + plotH + 10);
+
+            const numYTicks2 = Math.min(3, Math.floor(plotH / 40));
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            for (let i=0; i<=numYTicks2; i++) {
+                const t = i / numYTicks2;
+                const y = margin + (1 - t) * plotH;
+                const val = minVal + t * range;
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillText(val.toFixed(1), margin - 4, y);
+                ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(margin, y);
+                ctx.lineTo(margin - 4, y);
+                ctx.stroke();
+            }
+            ctx.save();
+            ctx.translate(10, margin + plotH/2);
+            ctx.rotate(-Math.PI/2);
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = '6px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('m/s²', 0, 0);
+            ctx.restore();
+            ctx.restore();
+        }
+        waveInfo.textContent = `窗口: ${waveWindow.start}~${waveWindow.end-1} (共${history.time.length}点)`;
+    }
+
+    // ---------- UI更新 ----------
+    function updateUI() {
+        dispAx.textContent = current.ax.toFixed(2);
+        dispAy.textContent = current.ay.toFixed(2);
+        dispAz.textContent = current.az.toFixed(2);
+        dispVx.textContent = current.vx.toFixed(2);
+        dispVy.textContent = current.vy.toFixed(2);
+        dispVz.textContent = current.vz.toFixed(2);
+        dispPx.textContent = current.px.toFixed(2);
+        dispPy.textContent = current.py.toFixed(2);
+        dispPz.textContent = current.pz.toFixed(2);
+        pointCount.textContent = dataCount;
+        if (startTime > 0) {
+            durationDisplay.textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's';
+        }
+        dispAlpha.textContent = orientation.alpha.toFixed(1) + '°';
+        dispBeta.textContent = orientation.beta.toFixed(1) + '°';
+        dispGamma.textContent = orientation.gamma.toFixed(1) + '°';
+    }
+
+    // ---------- 动画循环 ----------
+    let animFrameId = null;
+    function renderLoop() {
+        drawMap();
+        drawHeight();
+        drawWaveforms();
+        updateUI();
+        animFrameId = requestAnimationFrame(renderLoop);
+    }
+
+    // ---------- 控制 ----------
+    function showToast(msg, duration=2000) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    function setStatus(text, isActive, isError=false) {
+        statusText.textContent = text;
+        statusDot.className = 'status-dot';
+        if (isActive) statusDot.classList.add('active');
+        if (isError) statusDot.classList.add('error');
+    }
+
+    function startRecording() {
+        if (isRecording) {
+            isRecording = false;
+            btnStart.innerHTML = '<span class="btn-icon">▶</span> 开始';
+            btnStart.classList.remove('active');
+            setStatus('已停止', false);
+            showToast('⏸ 已停止记录');
+            return;
+        }
+        if (!window.DeviceMotionEvent && !window.DeviceOrientationEvent) {
+            showToast('❌ 设备不支持传感器', 3000);
+            setStatus('不支持', false, true);
+            return;
+        }
+        const requestPermission = () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(state => {
+                        if (state === 'granted') initSensors();
+                        else { showToast('⚠️ 需要传感器权限', 3000); setStatus('权限被拒', false, true); }
+                    })
+                    .catch(() => { showToast('⚠️ 权限请求失败', 3000); setStatus('错误', false, true); });
+            } else {
+                initSensors();
+            }
+        };
+        const initSensors = () => {
+            try {
+                resetData();
+                window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+                window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
+                isRecording = true;
+                startTime = performance.now();
+                lastSensorTime = 0;
+                btnStart.innerHTML = '<span class="btn-icon">⏹</span> 停止';
+                btnStart.classList.add('active');
+                setStatus('记录中', true);
+                showToast('🔴 开始记录数据', 1500);
+                if (!animFrameId) renderLoop();
+            } catch (e) {
+                showToast('❌ 传感器启动失败', 3000);
+                setStatus('错误', false, true);
+                isRecording = false;
+            }
+        };
+        requestPermission();
+    }
+
+    function resetData() {
+        for (let key in history) history[key] = [];
+        dataCount = 0;
+        current.ax = 0; current.ay = 0; current.az = 0;
+        current.vx = 0; current.vy = 0; current.vz = 0;
+        current.px = 0; current.py = 0; current.pz = 0;
+        startTime = performance.now();
+        lastSensorTime = 0;
+        pointCount.textContent = '0';
+        durationDisplay.textContent = '0s';
+        mapInfo.textContent = '就绪';
+        heightInfo.textContent = '就绪';
+        trailCount.textContent = '0 点';
+        heightCount.textContent = '0 点';
+        waveWindow.start = 0; waveWindow.end = 0; waveWindow.userSlid = false;
+        waveInfo.textContent = '窗口: 0 点';
+        setAutoScale();
+    }
+
+    function fullReset() {
+        if (isRecording) {
+            isRecording = false;
+            window.removeEventListener('devicemotion', onDeviceMotion);
+            window.removeEventListener('deviceorientation', onDeviceOrientation);
+        }
+        resetData();
+        btnStart.innerHTML = '<span class="btn-icon">▶</span> 开始';
+        btnStart.classList.remove('active');
+        setStatus('已重置', false);
+        showToast('🔄 已重置所有数据', 1200);
+        drawMap(); drawHeight(); drawWaveforms(); updateUI();
+    }
+
+    function exportData() {
+        if (history.time.length < 2) { showToast('⚠️ 没有足够数据导出', 2000); return; }
+        try {
+            const rows = ['time,ax,ay,az,vx,vy,vz,px,py,pz'];
+            for (let i=0; i<history.time.length; i++) {
+                rows.push([
+                    history.time[i].toFixed(4),
+                    history.ax[i].toFixed(6),
+                    history.ay[i].toFixed(6),
+                    history.az[i].toFixed(6),
+                    history.vx[i].toFixed(6),
+                    history.vy[i].toFixed(6),
+                    history.vz[i].toFixed(6),
+                    history.px[i].toFixed(6),
+                    history.py[i].toFixed(6),
+                    history.pz[i].toFixed(6),
+                ].join(','));
+            }
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.href = url;
+            const dateStr = new Date().toISOString().slice(0,19).replace(/[:-]/g,'');
+            link.download = `motion_track_${dateStr}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast(`✅ 导出 ${history.time.length} 个数据点`, 2000);
+        } catch (e) { showToast('❌ 导出失败: ' + e.message, 3000); }
+    }
+
+    // ---------- 波形滑动触摸 ----------
+    function setupWaveTouch() {
+        const containers = waveContainers;
+        let activeIdx = -1, startX = 0, startIdx = 0;
+        function onTouchStart(e) {
+            const touch = e.touches[0];
+            for (let i=0; i<containers.length; i++) {
+                const rect = containers[i].getBoundingClientRect();
+                if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                    touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                    activeIdx = i; startX = touch.clientX; startIdx = waveWindow.start;
+                    e.preventDefault(); break;
+                }
+            }
+        }
+        function onTouchMove(e) {
+            if (activeIdx === -1) return;
+            const touch = e.touches[0];
+            const dx = touch.clientX - startX;
+            const containerWidth = containers[activeIdx].clientWidth;
+            const deltaIdx = -Math.round(dx / containerWidth * waveWindow.maxPoints * 0.3);
+            if (deltaIdx !== 0) {
                 const n = history.time.length;
-                if (n === 0) return;
                 const range = waveWindow.end - waveWindow.start;
-                let newStart = waveWindow.start + delta;
-                let newEnd = waveWindow.end + delta;
+                let newStart = startIdx + deltaIdx;
+                let newEnd = newStart + range;
                 if (newStart < 0) { newStart = 0; newEnd = Math.min(range, n); }
                 if (newEnd > n) { newEnd = n; newStart = Math.max(0, n - range); }
                 if (newEnd - newStart < 2) return;
-                waveWindow.start = newStart;
-                waveWindow.end = newEnd;
+                waveWindow.start = newStart; waveWindow.end = newEnd;
                 waveWindow.userSlid = true;
                 drawWaveforms();
+                startIdx = waveWindow.start; startX = touch.clientX;
             }
-
-            // ================================================================
-            // Canvas 尺寸管理
-            // ================================================================
-            function resizeCanvas(canvas, container) {
-                const rect = container.getBoundingClientRect();
-                const dpr = window.devicePixelRatio || 1;
-                const w = rect.width || container.clientWidth || 300;
-                const h = rect.height || container.clientHeight || 200;
-                canvas.width = w * dpr;
-                canvas.height = h * dpr;
-                canvas.style.width = w + 'px';
-                canvas.style.height = h + 'px';
-                const ctx = canvas.getContext('2d');
-                ctx.scale(dpr, dpr);
-                return { w, h, ctx, dpr };
-            }
-
-            function resizeAllCanvases() {
-                const map = resizeCanvas(mapCanvas, mapContainer);
-                const height = resizeCanvas(heightCanvas, heightContainer);
-                const wX = resizeCanvas(waveCanvasX, waveContainers[0]);
-                const wY = resizeCanvas(waveCanvasY, waveContainers[1]);
-                const wZ = resizeCanvas(waveCanvasZ, waveContainers[2]);
-                return { map, height, wX, wY, wZ };
-            }
-
-            // ================================================================
-            // 坐标变换
-            // ================================================================
-            function degToRad(deg) { return deg * Math.PI / 180; }
-
-            function buildRotationMatrix(alphaDeg, betaDeg, gammaDeg) {
-                const a = degToRad(alphaDeg), b = degToRad(betaDeg), g = degToRad(gammaDeg);
-                const ca = Math.cos(a), sa = Math.sin(a);
-                const cb = Math.cos(b), sb = Math.sin(b);
-                const cg = Math.cos(g), sg = Math.sin(g);
-                const Rz = [[ca, -sa, 0], [sa, ca, 0], [0, 0, 1]];
-                const Rx = [[1, 0, 0], [0, cb, -sb], [0, sb, cb]];
-                const Ry = [[cg, 0, sg], [0, 1, 0], [-sg, 0, cg]];
-                function matMul(A, B) {
-                    const C = [[0,0,0],[0,0,0],[0,0,0]];
-                    for (let i = 0; i < 3; i++)
-                        for (let j = 0; j < 3; j++)
-                            for (let k = 0; k < 3; k++)
-                                C[i][j] += A[i][k] * B[k][j];
-                    return C;
-                }
-                const RzRx = matMul(Rz, Rx);
-                return matMul(RzRx, Ry);
-            }
-
-            function transformAccel(ax, ay, az, alpha, beta, gamma) {
-                const R = buildRotationMatrix(alpha, beta, gamma);
-                const wx = R[0][0]*ax + R[0][1]*ay + R[0][2]*az;
-                const wy = R[1][0]*ax + R[1][1]*ay + R[1][2]*az;
-                const wz = R[2][0]*ax + R[2][1]*ay + R[2][2]*az;
-                return { wx, wy, wz };
-            }
-
-            // ================================================================
-            // 重力校准
-            // ================================================================
-            function performCalibration() {
-                if (isCalibrating) return;
-                isCalibrating = true;
-                btnCalibrate.textContent = '校准中…';
-                btnCalibrate.disabled = true;
-                calibSamples = [];
-                showToast('⚖ 正在采集静止数据，请保持设备不动…', 2500);
-
-                // 采集2秒数据 (约60帧)
-                let count = 0;
-                const maxSamples = 60;
-                const origHandler = window.ondevicemotion;
-
-                function collect(e) {
-                    const accel = e.acceleration;
-                    if (!accel) return;
-                    const ax = accel.x || 0, ay = accel.y || 0, az = accel.z || 0;
-                    // 旋转到世界坐标系
-                    const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
-                    calibSamples.push({ wx: world.wx, wy: world.wy, wz: world.wz });
-                    count++;
-                    if (count >= maxSamples) {
-                        window.removeEventListener('devicemotion', collect);
-                        // 计算平均值
-                        let sumX = 0, sumY = 0, sumZ = 0;
-                        for (let s of calibSamples) {
-                            sumX += s.wx; sumY += s.wy; sumZ += s.wz;
-                        }
-                        calibGravity.x = sumX / calibSamples.length;
-                        calibGravity.y = sumY / calibSamples.length;
-                        calibGravity.z = sumZ / calibSamples.length;
-                        isCalibrated = true;
-                        isCalibrating = false;
-                        btnCalibrate.textContent = '⚖ 校准';
-                        btnCalibrate.disabled = false;
-                        btnCalibrate.classList.add('active');
-                        calibStatus.textContent = '已校准';
-                        calibVector.style.display = 'inline';
-                        calibGx.textContent = calibGravity.x.toFixed(2);
-                        calibGy.textContent = calibGravity.y.toFixed(2);
-                        calibGz.textContent = calibGravity.z.toFixed(2);
-                        statusDot.className = 'status-dot calibrated';
-                        showToast('✅ 重力校准完成', 1500);
-                        // 重置积分状态，防止跳变
-                        resetIntegrationState();
-                    }
-                }
-                window.addEventListener('devicemotion', collect, { passive: true });
-                // 若超时未采集够，则强制完成
-                setTimeout(() => {
-                    if (isCalibrating && count < maxSamples) {
-                        window.removeEventListener('devicemotion', collect);
-                        if (count > 5) {
-                            // 使用已有数据
-                            let sumX = 0, sumY = 0, sumZ = 0;
-                            for (let s of calibSamples) {
-                                sumX += s.wx; sumY += s.wy; sumZ += s.wz;
-                            }
-                            calibGravity.x = sumX / calibSamples.length;
-                            calibGravity.y = sumY / calibSamples.length;
-                            calibGravity.z = sumZ / calibSamples.length;
-                            isCalibrated = true;
-                            isCalibrating = false;
-                            btnCalibrate.textContent = '⚖ 校准';
-                            btnCalibrate.disabled = false;
-                            btnCalibrate.classList.add('active');
-                            calibStatus.textContent = '已校准';
-                            calibVector.style.display = 'inline';
-                            calibGx.textContent = calibGravity.x.toFixed(2);
-                            calibGy.textContent = calibGravity.y.toFixed(2);
-                            calibGz.textContent = calibGravity.z.toFixed(2);
-                            statusDot.className = 'status-dot calibrated';
-                            showToast('⚖ 校准完成 (部分数据)', 1500);
-                            resetIntegrationState();
-                        } else {
-                            isCalibrating = false;
-                            btnCalibrate.textContent = '⚖ 校准';
-                            btnCalibrate.disabled = false;
-                            showToast('⚠️ 校准失败，数据不足', 2000);
-                        }
-                    }
-                }, 3000);
-            }
-
-            function resetIntegrationState() {
-                // 重置积分器，防止累积漂移
-                prevAx = 0; prevAy = 0; prevAz = 0;
-                prevVx = 0; prevVy = 0; prevVz = 0;
-                current.vx = 0; current.vy = 0; current.vz = 0;
-                current.px = 0; current.py = 0; current.pz = 0;
-                // 清空历史
-                for (let key in history) history[key] = [];
-                dataCount = 0;
-                pointCount.textContent = '0';
-                durationDisplay.textContent = '0s';
-            }
-
-            // ================================================================
-            // 数据处理 (扣除重力)
-            // ================================================================
-            function processSensorData(ax, ay, az, dt) {
-                if (dt <= 0 || dt > 0.1) dt = 0.016;
-
-                // 扣除重力 (如果已校准)
-                let linAx = ax, linAy = ay, linAz = az;
-                if (isCalibrated) {
-                    linAx = ax - calibGravity.x;
-                    linAy = ay - calibGravity.y;
-                    linAz = az - calibGravity.z;
-                }
-
-                // 低通滤波
-                const lpf = FILTER.alphaAccel;
-                current.ax = current.ax * (1 - lpf) + linAx * lpf;
-                current.ay = current.ay * (1 - lpf) + linAy * lpf;
-                current.az = current.az * (1 - lpf) + linAz * lpf;
-
-                // 积分
-                const ax_m = (current.ax + prevAx) / 2;
-                const ay_m = (current.ay + prevAy) / 2;
-                const az_m = (current.az + prevAz) / 2;
-
-                let dvx = ax_m * dt, dvy = ay_m * dt, dvz = az_m * dt;
-                const hp = FILTER.alphaVelocity;
-                current.vx = current.vx * hp + dvx * (1 - hp);
-                current.vy = current.vy * hp + dvy * (1 - hp);
-                current.vz = current.vz * hp + dvz * (1 - hp);
-
-                // 静止检测
-                const accelMag = Math.sqrt(current.ax*current.ax + current.ay*current.ay + current.az*current.az);
-                const speedMag = Math.sqrt(current.vx*current.vx + current.vy*current.vy + current.vz*current.vz);
-                if (accelMag < FILTER.driftThreshold && speedMag < 0.05) {
-                    current.vx *= 0.9; current.vy *= 0.9; current.vz *= 0.9;
-                    if (speedMag < 0.005) { current.vx = 0; current.vy = 0; current.vz = 0; }
-                }
-
-                const vx_m = (current.vx + prevVx) / 2;
-                const vy_m = (current.vy + prevVy) / 2;
-                const vz_m = (current.vz + prevVz) / 2;
-                current.px += vx_m * dt;
-                current.py += vy_m * dt;
-                current.pz += vz_m * dt;
-
-                prevAx = current.ax; prevAy = current.ay; prevAz = current.az;
-                prevVx = current.vx; prevVy = current.vy; prevVz = current.vz;
-
-                const now = (performance.now() - startTime) / 1000;
-                history.time.push(now);
-                history.ax.push(current.ax);
-                history.ay.push(current.ay);
-                history.az.push(current.az);
-                history.vx.push(current.vx);
-                history.vy.push(current.vy);
-                history.vz.push(current.vz);
-                history.px.push(current.px);
-                history.py.push(current.py);
-                history.pz.push(current.pz);
-
-                const MAX_HISTORY = 3000;
-                if (history.time.length > MAX_HISTORY) {
-                    const trim = history.time.length - MAX_HISTORY;
-                    for (let key in history) history[key].splice(0, trim);
-                }
-                dataCount = history.time.length;
-            }
-
-            // ================================================================
-            // 绘图辅助：绘制坐标轴刻度
-            // ================================================================
-            function drawAxisTicks(ctx, w, h, margin, xMin, xMax, yMin, yMax, xUnit, yUnit, xLabel, yLabel) {
-                // 绘制边框
-                ctx.save();
-                ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(margin, margin, w - 2*margin, h - 2*margin);
-
-                // X轴刻度
-                const xRange = xMax - xMin || 1;
-                const numXTicks = Math.min(6, Math.floor((w - 2*margin) / 60));
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                ctx.font = '8px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                for (let i = 0; i <= numXTicks; i++) {
-                    const t = i / numXTicks;
-                    const x = margin + t * (w - 2*margin);
-                    const val = xMin + t * xRange;
-                    ctx.fillText(val.toFixed(1), x, h - margin + 2);
-                    // 小刻度线
-                    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-                    ctx.lineWidth = 0.5;
-                    ctx.beginPath();
-                    ctx.moveTo(x, h - margin);
-                    ctx.lineTo(x, h - margin + 4);
-                    ctx.stroke();
-                }
-                // X轴标签
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.font = '7px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText(xLabel, w/2, h - margin + 12);
-
-                // Y轴刻度
-                const yRange = yMax - yMin || 1;
-                const numYTicks = Math.min(5, Math.floor((h - 2*margin) / 50));
-                ctx.textAlign = 'right';
-                ctx.textBaseline = 'middle';
-                for (let i = 0; i <= numYTicks; i++) {
-                    const t = i / numYTicks;
-                    const y = margin + (1 - t) * (h - 2*margin);
-                    const val = yMin + t * yRange;
-                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                    ctx.fillText(val.toFixed(1), margin - 4, y);
-                    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-                    ctx.lineWidth = 0.5;
-                    ctx.beginPath();
-                    ctx.moveTo(margin, y);
-                    ctx.lineTo(margin - 4, y);
-                    ctx.stroke();
-                }
-                // Y轴标签
-                ctx.save();
-                ctx.translate(12, h/2);
-                ctx.rotate(-Math.PI/2);
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.font = '7px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(yLabel, 0, 0);
-                ctx.restore();
-
-                ctx.restore();
-            }
-
-            // ================================================================
-            // 绘图：地图 (带标尺)
-            // ================================================================
-            function drawMap() {
-                const { w, h, ctx } = resizeCanvas(mapCanvas, mapContainer);
-                ctx.clearRect(0, 0, w, h);
-
-                // 背景
-                const grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w,h)*0.7);
-                grad.addColorStop(0, 'rgba(20,30,60,0.3)');
-                grad.addColorStop(1, 'rgba(0,0,0,0.4)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-
-                if (history.px.length < 2) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                    ctx.font = '14px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('等待数据…', w/2, h/2);
-                    return;
-                }
-
-                if (mapView.autoScale) computeAutoScale();
-
-                const minX = mapView.minX, maxX = mapView.maxX;
-                const minY = mapView.minY, maxY = mapView.maxY;
-                const margin = 32; // 标尺留白
-                const plotW = w - 2*margin;
-                const plotH = h - 2*margin;
-
-                function mapX(vx) { return margin + (vx - minX) / (maxX - minX) * plotW; }
-                function mapY(vy) { return margin + (vy - minY) / (maxY - minY) * plotH; }
-
-                // 绘制网格 (背景辅助线)
-                ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-                ctx.lineWidth = 0.5;
-                const steps = 8;
-                for (let i = 0; i <= steps; i++) {
-                    const x = margin + (i/steps) * plotW;
-                    const y = margin + (i/steps) * plotH;
-                    ctx.beginPath();
-                    ctx.moveTo(x, margin);
-                    ctx.lineTo(x, margin + plotH);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(margin, y);
-                    ctx.lineTo(margin + plotW, y);
-                    ctx.stroke();
-                }
-
-                // 绘制轨迹
-                const pxArr = history.px, pyArr = history.py, vxArr = history.vx, vyArr = history.vy;
-                const len = pxArr.length;
-                let maxSpeed = 0;
-                for (let i=0; i<len; i++) {
-                    const spd = Math.sqrt(vxArr[i]*vxArr[i] + vyArr[i]*vyArr[i]);
-                    if (spd > maxSpeed) maxSpeed = spd;
-                }
-                maxSpeed = Math.max(maxSpeed, 0.01);
-
-                for (let i=1; i<len; i++) {
-                    const x1 = mapX(pxArr[i-1]), y1 = mapY(pyArr[i-1]);
-                    const x2 = mapX(pxArr[i]), y2 = mapY(pyArr[i]);
-                    const spd = Math.sqrt(vxArr[i]*vxArr[i] + vyArr[i]*vyArr[i]);
-                    const t = Math.min(spd / maxSpeed, 1);
-                    const hue = 220 - t * 200;
-                    const light = 50 + t * 30;
-                    ctx.beginPath();
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
-                    ctx.strokeStyle = `hsl(${hue}, 90%, ${light}%)`;
-                    ctx.lineWidth = 2.5 + 1.5 * t;
-                    ctx.lineCap = 'round';
-                    ctx.stroke();
-                }
-
-                // 当前位置
-                const lastX = mapX(pxArr[len-1]), lastY = mapY(pyArr[len-1]);
-                const glow = ctx.createRadialGradient(lastX, lastY, 0, lastX, lastY, 18);
-                glow.addColorStop(0, 'rgba(0,212,255,0.9)');
-                glow.addColorStop(0.3, 'rgba(0,212,255,0.4)');
-                glow.addColorStop(1, 'rgba(0,212,255,0)');
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(lastX, lastY, 18, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = '#fff';
-                ctx.beginPath();
-                ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
-                ctx.fill();
-
-                // 起点
-                if (len > 1) {
-                    const sx = mapX(pxArr[0]), sy = mapY(pyArr[0]);
-                    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-                    ctx.beginPath();
-                    ctx.arc(sx, sy, 5, 0, Math.PI*2);
-                    ctx.fill();
-                    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                    ctx.font = '9px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    ctx.fillText('● 起点', sx, sy + 8);
-                }
-
-                // 陀螺仪方向箭头
-                if (hasOrientation && len > 0) {
-                    const alphaRad = degToRad(orientation.alpha);
-                    const arrowLen = 25;
-                    const endX = lastX + arrowLen * Math.sin(alphaRad);
-                    const endY = lastY - arrowLen * Math.cos(alphaRad);
-                    ctx.save();
-                    ctx.strokeStyle = '#ff4081';
-                    ctx.lineWidth = 2.5;
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(endX, endY);
-                    ctx.stroke();
-                    const headLen = 10;
-                    const angle = Math.atan2(endY - lastY, endX - lastX);
-                    ctx.fillStyle = '#ff4081';
-                    ctx.beginPath();
-                    ctx.moveTo(endX, endY);
-                    ctx.lineTo(endX - headLen * Math.cos(angle - 0.5), endY - headLen * Math.sin(angle - 0.5));
-                    ctx.lineTo(endX - headLen * Math.cos(angle + 0.5), endY - headLen * Math.sin(angle + 0.5));
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.restore();
-                }
-
-                // 绘制刻度标尺
-                drawAxisTicks(ctx, w, h, margin, minX, maxX, minY, maxY, 'm', 'm', 'X (m)', 'Y (m)');
-
-                // 额外信息
-                ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(`位移: ${Math.sqrt(current.px*current.px + current.py*current.py).toFixed(1)}m`, margin, margin + plotH - 4);
-
-                const dist = Math.sqrt(current.px*current.px + current.py*current.py);
-                mapInfo.textContent = `位移 ${dist.toFixed(1)}m · 点数 ${len}`;
-                trailCount.textContent = `${len} 点`;
-            }
-
-            // ================================================================
-            // 绘图：高度曲线 (带标尺)
-            // ================================================================
-            function drawHeight() {
-                const { w, h, ctx } = resizeCanvas(heightCanvas, heightContainer);
-                ctx.clearRect(0, 0, w, h);
-                ctx.fillStyle = 'rgba(0,0,0,0.25)';
-                ctx.fillRect(0, 0, w, h);
-
-                if (history.pz.length < 2) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                    ctx.font = '14px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('等待数据…', w/2, h/2);
-                    return;
-                }
-
-                const pzArr = history.pz, timeArr = history.time;
-                const len = pzArr.length;
-                let minZ = Math.min(...pzArr), maxZ = Math.max(...pzArr);
-                const rangeZ = maxZ - minZ || 1;
-                const margin = 32;
-                const plotW = w - 2*margin;
-                const plotH = h - 2*margin;
-                const t0 = timeArr[0], t1 = timeArr[timeArr.length-1];
-                const tRange = t1 - t0 || 1;
-
-                function mapX(t) { return margin + (t - t0) / tRange * plotW; }
-                function mapY(z) { return margin + (maxZ - z) / rangeZ * plotH; }
-
-                // 零线
-                const zeroY = mapY(0);
-                if (zeroY >= margin && zeroY <= margin + plotH) {
-                    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([3,5]);
-                    ctx.beginPath();
-                    ctx.moveTo(margin, zeroY);
-                    ctx.lineTo(margin + plotW, zeroY);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-
-                // 填充
-                ctx.beginPath();
-                ctx.moveTo(mapX(timeArr[0]), margin + plotH);
-                for (let i=0; i<len; i++) {
-                    ctx.lineTo(mapX(timeArr[i]), mapY(pzArr[i]));
-                }
-                ctx.lineTo(mapX(timeArr[len-1]), margin + plotH);
-                ctx.closePath();
-                const grad = ctx.createLinearGradient(0, margin, 0, margin + plotH);
-                grad.addColorStop(0, 'rgba(124,77,255,0.25)');
-                grad.addColorStop(0.5, 'rgba(124,77,255,0.08)');
-                grad.addColorStop(1, 'rgba(124,77,255,0.01)');
-                ctx.fillStyle = grad;
-                ctx.fill();
-
-                // 曲线
-                ctx.beginPath();
-                for (let i=0; i<len; i++) {
-                    const x = mapX(timeArr[i]), y = mapY(pzArr[i]);
-                    if (i===0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                }
-                ctx.strokeStyle = '#7c4dff';
-                ctx.lineWidth = 2.5;
-                ctx.shadowColor = 'rgba(124,77,255,0.3)';
-                ctx.shadowBlur = 10;
-                ctx.stroke();
-                ctx.shadowBlur = 0;
-
-                // 当前位置
-                const lastX = mapX(timeArr[len-1]), lastY = mapY(pzArr[len-1]);
-                ctx.fillStyle = '#7c4dff';
-                ctx.beginPath();
-                ctx.arc(lastX, lastY, 4, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = 'rgba(124,77,255,0.15)';
-                ctx.beginPath();
-                ctx.arc(lastX, lastY, 12, 0, Math.PI*2);
-                ctx.fill();
-
-                // 俯仰箭头
-                if (hasOrientation) {
-                    const betaRad = degToRad(orientation.beta);
-                    const arrowLen = 20;
-                    const dir = -Math.sin(betaRad);
-                    const endY2 = lastY + dir * arrowLen;
-                    ctx.save();
-                    ctx.strokeStyle = '#ff9100';
-                    ctx.lineWidth = 2.5;
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(lastX, endY2);
-                    ctx.stroke();
-                    const headLen2 = 8;
-                    const angle2 = dir > 0 ? -Math.PI/2 : Math.PI/2;
-                    ctx.fillStyle = '#ff9100';
-                    ctx.beginPath();
-                    ctx.moveTo(lastX, endY2);
-                    ctx.lineTo(lastX - headLen2*0.5, endY2 - dir*headLen2*0.866);
-                    ctx.lineTo(lastX + headLen2*0.5, endY2 - dir*headLen2*0.866);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.restore();
-                }
-
-                // 标尺
-                drawAxisTicks(ctx, w, h, margin, t0, t1, minZ, maxZ, 's', 'm', '时间 (s)', '高度 (m)');
-
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.font = '9px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(`Z: ${current.pz.toFixed(2)}m`, margin, margin + plotH - 4);
-                heightInfo.textContent = `高度 ${current.pz.toFixed(2)}m · 变化 ${(maxZ-minZ).toFixed(2)}m`;
-                heightCount.textContent = `${len} 点`;
-            }
-
-            // ================================================================
-            // 绘图：三轴加速度波形 (带标尺)
-            // ================================================================
-            function drawWaveforms() {
-                const axes = ['ax', 'ay', 'az'];
-                const colors = ['#00d4ff', '#00e676', '#7c4dff'];
-                const canvases = [waveCanvasX, waveCanvasY, waveCanvasZ];
-                const containers = waveContainers;
-
-                const n = history.time.length;
-                if (n === 0) {
-                    for (let i=0; i<3; i++) {
-                        const canvas = canvases[i];
-                        const container = containers[i];
-                        const { w, h, ctx } = resizeCanvas(canvas, container);
-                        ctx.clearRect(0,0,w,h);
-                        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-                        ctx.font = '12px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('无数据', w/2, h/2);
-                    }
-                    return;
-                }
-
-                updateWaveWindow();
-                const startIdx = waveWindow.start;
-                const endIdx = waveWindow.end;
-                const count = endIdx - startIdx;
-                if (count < 2) {
-                    for (let i=0; i<3; i++) {
-                        const canvas = canvases[i];
-                        const container = containers[i];
-                        const { w, h, ctx } = resizeCanvas(canvas, container);
-                        ctx.clearRect(0,0,w,h);
-                        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-                        ctx.font = '12px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText('数据不足', w/2, h/2);
-                    }
-                    return;
-                }
-
-                for (let idx=0; idx<3; idx++) {
-                    const canvas = canvases[idx];
-                    const container = containers[idx];
-                    const { w, h, ctx } = resizeCanvas(canvas, container);
-                    ctx.clearRect(0,0,w,h);
-
-                    const dataArr = history[axes[idx]];
-                    const slice = dataArr.slice(startIdx, endIdx);
-                    const timeSlice = history.time.slice(startIdx, endIdx);
-                    let minVal = Math.min(...slice);
-                    let maxVal = Math.max(...slice);
-                    const range = maxVal - minVal || 0.01;
-                    const margin = 18;
-                    const plotW = w - 2*margin;
-                    const plotH = h - 2*margin;
-
-                    function mapY2(val) { return margin + (maxVal - val) / range * plotH; }
-                    function mapX2(i) { return margin + (i / (count-1)) * plotW; }
-
-                    // 背景网格
-                    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-                    ctx.lineWidth = 0.5;
-                    for (let i=0; i<5; i++) {
-                        const y = margin + (i/4) * plotH;
-                        ctx.beginPath();
-                        ctx.moveTo(margin, y);
-                        ctx.lineTo(margin + plotW, y);
-                        ctx.stroke();
-                    }
-
-                    // 零线
-                    const zeroY2 = mapY2(0);
-                    if (zeroY2 >= margin && zeroY2 <= margin + plotH) {
-                        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-                        ctx.lineWidth = 1;
-                        ctx.setLineDash([2,3]);
-                        ctx.beginPath();
-                        ctx.moveTo(margin, zeroY2);
-                        ctx.lineTo(margin + plotW, zeroY2);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                    }
-
-                    // 曲线
-                    ctx.beginPath();
-                    for (let i=0; i<count; i++) {
-                        const x = mapX2(i);
-                        const y = mapY2(slice[i]);
-                        if (i===0) ctx.moveTo(x, y);
-                        else ctx.lineTo(x, y);
-                    }
-                    ctx.strokeStyle = colors[idx];
-                    ctx.lineWidth = 1.8;
-                    ctx.shadowColor = colors[idx] + '40';
-                    ctx.shadowBlur = 6;
-                    ctx.stroke();
-                    ctx.shadowBlur = 0;
-
-                    // 当前值标记
-                    if (count > 0) {
-                        const lastVal = slice[count-1];
-                        const lx = mapX2(count-1);
-                        const ly = mapY2(lastVal);
-                        ctx.fillStyle = colors[idx];
-                        ctx.beginPath();
-                        ctx.arc(lx, ly, 3, 0, Math.PI*2);
-                        ctx.fill();
-                    }
-
-                    // 标尺 (X轴显示相对时间或索引)
-                    const tStart = timeSlice[0];
-                    const tEnd = timeSlice[timeSlice.length-1];
-                    const tRange2 = tEnd - tStart || 1;
-                    // 自定义标尺函数，因为这里X轴是时间
-                    ctx.save();
-                    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(margin, margin, plotW, plotH);
-                    // X轴刻度 (时间)
-                    const numXTicks2 = Math.min(4, Math.floor(plotW / 50));
-                    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                    ctx.font = '7px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    for (let i=0; i<=numXTicks2; i++) {
-                        const t = i / numXTicks2;
-                        const x = margin + t * plotW;
-                        const val = tStart + t * tRange2;
-                        ctx.fillText(val.toFixed(1), x, margin + plotH + 2);
-                        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-                        ctx.lineWidth = 0.5;
-                        ctx.beginPath();
-                        ctx.moveTo(x, margin + plotH);
-                        ctx.lineTo(x, margin + plotH + 4);
-                        ctx.stroke();
-                    }
-                    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                    ctx.font = '6px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    ctx.fillText('时间 (s)', margin + plotW/2, margin + plotH + 10);
-
-                    // Y轴刻度
-                    const numYTicks2 = Math.min(3, Math.floor(plotH / 40));
-                    ctx.textAlign = 'right';
-                    ctx.textBaseline = 'middle';
-                    for (let i=0; i<=numYTicks2; i++) {
-                        const t = i / numYTicks2;
-                        const y = margin + (1 - t) * plotH;
-                        const val = minVal + t * range;
-                        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                        ctx.fillText(val.toFixed(1), margin - 4, y);
-                        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-                        ctx.lineWidth = 0.5;
-                        ctx.beginPath();
-                        ctx.moveTo(margin, y);
-                        ctx.lineTo(margin - 4, y);
-                        ctx.stroke();
-                    }
-                    ctx.save();
-                    ctx.translate(10, margin + plotH/2);
-                    ctx.rotate(-Math.PI/2);
-                    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                    ctx.font = '6px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('m/s²', 0, 0);
-                    ctx.restore();
-                    ctx.restore();
-                }
-                waveInfo.textContent = `窗口: ${waveWindow.start}~${waveWindow.end-1} (共${history.time.length}点)`;
-            }
-
-            // ================================================================
-            // UI 更新
-            // ================================================================
-            function updateUI() {
-                dispAx.textContent = current.ax.toFixed(2);
-                dispAy.textContent = current.ay.toFixed(2);
-                dispAz.textContent = current.az.toFixed(2);
-                dispVx.textContent = current.vx.toFixed(2);
-                dispVy.textContent = current.vy.toFixed(2);
-                dispVz.textContent = current.vz.toFixed(2);
-                dispPx.textContent = current.px.toFixed(2);
-                dispPy.textContent = current.py.toFixed(2);
-                dispPz.textContent = current.pz.toFixed(2);
-                pointCount.textContent = dataCount;
-                if (startTime > 0) {
-                    durationDisplay.textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's';
-                }
-                dispAlpha.textContent = orientation.alpha.toFixed(1) + '°';
-                dispBeta.textContent = orientation.beta.toFixed(1) + '°';
-                dispGamma.textContent = orientation.gamma.toFixed(1) + '°';
-            }
-
-            // ================================================================
-            // 动画循环
-            // ================================================================
-            let animFrameId = null;
-            function renderLoop() {
-                drawMap();
-                drawHeight();
-                drawWaveforms();
-                updateUI();
-                animFrameId = requestAnimationFrame(renderLoop);
-            }
-
-            // ================================================================
-            // 传感器处理
-            // ================================================================
-            let lastSensorTime = 0;
-
-            function onDeviceMotion(event) {
-                if (!isRecording) return;
-                const accel = event.acceleration;
-                if (!accel) return;
-                const ax = accel.x || 0, ay = accel.y || 0, az = accel.z || 0;
-                const now = performance.now();
-                let dt = (now - lastSensorTime) / 1000;
-                if (lastSensorTime === 0) dt = 0.016;
-                if (dt > 0.05) dt = 0.016;
-                lastSensorTime = now;
-
-                const world = transformAccel(ax, ay, az, orientation.alpha, orientation.beta, orientation.gamma);
-                processSensorData(world.wx, world.wy, world.wz, dt);
-            }
-
-            function onDeviceOrientation(event) {
-                orientation.alpha = event.alpha || 0;
-                orientation.beta = event.beta || 0;
-                orientation.gamma = event.gamma || 0;
-                hasOrientation = true;
-            }
-
-            // ================================================================
-            // 控制逻辑
-            // ================================================================
-            function showToast(msg, duration=2000) {
-                toast.textContent = msg;
-                toast.classList.add('show');
-                clearTimeout(toastTimer);
-                toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
-            }
-
-            function setStatus(text, isActive, isError=false) {
-                statusText.textContent = text;
-                statusDot.className = 'status-dot';
-                if (isActive) statusDot.classList.add('active');
-                if (isError) statusDot.classList.add('error');
-            }
-
-            function startRecording() {
-                if (isRecording) {
-                    isRecording = false;
-                    btnStart.innerHTML = '<span class="btn-icon">▶</span> 开始';
-                    btnStart.classList.remove('active');
-                    setStatus('已停止', false);
-                    showToast('⏸ 已停止记录');
-                    return;
-                }
-                if (!window.DeviceMotionEvent && !window.DeviceOrientationEvent) {
-                    showToast('❌ 设备不支持传感器', 3000);
-                    setStatus('不支持', false, true);
-                    return;
-                }
-                const requestPermission = () => {
-                    if (typeof DeviceOrientationEvent !== 'undefined' &&
-                        typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        DeviceOrientationEvent.requestPermission()
-                            .then(state => {
-                                if (state === 'granted') initSensors();
-                                else { showToast('⚠️ 需要传感器权限', 3000); setStatus('权限被拒', false, true); }
-                            })
-                            .catch(() => { showToast('⚠️ 权限请求失败', 3000); setStatus('错误', false, true); });
-                    } else {
-                        initSensors();
-                    }
-                };
-                const initSensors = () => {
-                    try {
-                        resetData();
-                        window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
-                        window.addEventListener('deviceorientation', onDeviceOrientation, { passive: true });
-                        hasSensor = true;
-                        isRecording = true;
-                        startTime = performance.now();
-                        lastSensorTime = 0;
-                        prevAx = 0; prevAy = 0; prevAz = 0;
-                        prevVx = 0; prevVy = 0; prevVz = 0;
-                        btnStart.innerHTML = '<span class="btn-icon">⏹</span> 停止';
-                        btnStart.classList.add('active');
-                        setStatus('记录中', true);
-                        showToast('🔴 开始记录数据', 1500);
-                        if (!animFrameId) renderLoop();
-                    } catch (e) {
-                        showToast('❌ 传感器启动失败', 3000);
-                        setStatus('错误', false, true);
-                        isRecording = false;
-                    }
-                };
-                requestPermission();
-            }
-
-            function resetData() {
-                for (let key in history) history[key] = [];
-                dataCount = 0;
-                current.ax = 0; current.ay = 0; current.az = 0;
-                current.vx = 0; current.vy = 0; current.vz = 0;
-                current.px = 0; current.py = 0; current.pz = 0;
-                prevAx = 0; prevAy = 0; prevAz = 0;
-                prevVx = 0; prevVy = 0; prevVz = 0;
-                startTime = performance.now();
-                lastSensorTime = 0;
-                pointCount.textContent = '0';
-                durationDisplay.textContent = '0s';
-                mapInfo.textContent = '就绪';
-                heightInfo.textContent = '就绪';
-                trailCount.textContent = '0 点';
-                heightCount.textContent = '0 点';
-                waveWindow.start = 0; waveWindow.end = 0; waveWindow.userSlid = false;
-                waveInfo.textContent = '窗口: 0 点';
-                setAutoScale();
-            }
-
-            function fullReset() {
-                if (isRecording) {
-                    isRecording = false;
-                    window.removeEventListener('devicemotion', onDeviceMotion);
-                    window.removeEventListener('deviceorientation', onDeviceOrientation);
-                }
-                resetData();
-                btnStart.innerHTML = '<span class="btn-icon">▶</span> 开始';
-                btnStart.classList.remove('active');
-                setStatus('已重置', false);
-                showToast('🔄 已重置所有数据', 1200);
-                drawMap(); drawHeight(); drawWaveforms(); updateUI();
-            }
-
-            function exportData() {
-                if (history.time.length < 2) { showToast('⚠️ 没有足够数据导出', 2000); return; }
-                try {
-                    const rows = ['time,ax,ay,az,vx,vy,vz,px,py,pz'];
-                    for (let i=0; i<history.time.length; i++) {
-                        rows.push([
-                            history.time[i].toFixed(4),
-                            history.ax[i].toFixed(6),
-                            history.ay[i].toFixed(6),
-                            history.az[i].toFixed(6),
-                            history.vx[i].toFixed(6),
-                            history.vy[i].toFixed(6),
-                            history.vz[i].toFixed(6),
-                            history.px[i].toFixed(6),
-                            history.py[i].toFixed(6),
-                            history.pz[i].toFixed(6),
-                        ].join(','));
-                    }
-                    const csv = rows.join('\n');
-                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                    const link = document.createElement('a');
-                    const url = URL.createObjectURL(blob);
-                    link.href = url;
-                    const dateStr = new Date().toISOString().slice(0,19).replace(/[:-]/g,'');
-                    link.download = `motion_track_${dateStr}.csv`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                    showToast(`✅ 导出 ${history.time.length} 个数据点`, 2000);
-                } catch (e) { showToast('❌ 导出失败: ' + e.message, 3000); }
-            }
-
-            // ================================================================
-            // 波形滑动交互 (触摸)
-            // ================================================================
-            function setupWaveTouch() {
-                const containers = waveContainers;
-                let activeIdx = -1;
-                let startX = 0, startIdx = 0;
-
-                function onTouchStart(e) {
-                    const touch = e.touches[0];
-                    for (let i=0; i<containers.length; i++) {
-                        const rect = containers[i].getBoundingClientRect();
-                        if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-                            touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-                            activeIdx = i;
-                            startX = touch.clientX;
-                            startIdx = waveWindow.start;
-                            e.preventDefault();
-                            break;
-                        }
-                    }
-                }
-
-                function onTouchMove(e) {
-                    if (activeIdx === -1) return;
-                    const touch = e.touches[0];
-                    const dx = touch.clientX - startX;
-                    const containerWidth = containers[activeIdx].clientWidth;
-                    const deltaIdx = -Math.round(dx / containerWidth * waveWindow.maxPoints * 0.3);
-                    if (deltaIdx !== 0) {
-                        const n = history.time.length;
-                        const range = waveWindow.end - waveWindow.start;
-                        let newStart = startIdx + deltaIdx;
-                        let newEnd = newStart + range;
-                        if (newStart < 0) { newStart = 0; newEnd = Math.min(range, n); }
-                        if (newEnd > n) { newEnd = n; newStart = Math.max(0, n - range); }
-                        if (newEnd - newStart < 2) return;
-                        waveWindow.start = newStart;
-                        waveWindow.end = newEnd;
-                        waveWindow.userSlid = true;
-                        drawWaveforms();
-                        startIdx = waveWindow.start;
-                        startX = touch.clientX;
-                    }
-                    e.preventDefault();
-                }
-
-                function onTouchEnd(e) { activeIdx = -1; }
-
-                for (const container of containers) {
-                    container.addEventListener('touchstart', onTouchStart, { passive: false });
-                    container.addEventListener('touchmove', onTouchMove, { passive: false });
-                    container.addEventListener('touchend', onTouchEnd, { passive: false });
-                    container.addEventListener('touchcancel', onTouchEnd, { passive: false });
-                }
-            }
-
-            // ================================================================
-            // 窗口事件
-            // ================================================================
-            let resizeTimer = null;
-            function handleResize() {
-                clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(() => {
-                    resizeAllCanvases();
-                    drawMap();
-                    drawHeight();
-                    drawWaveforms();
-                }, 100);
-            }
-
-            // ================================================================
-            // 初始化
-            // ================================================================
-            function init() {
-                setTimeout(() => {
-                    resizeAllCanvases();
-                    drawMap();
-                    drawHeight();
-                    drawWaveforms();
-                }, 50);
-
-                btnStart.addEventListener('click', startRecording);
-                btnReset.addEventListener('click', fullReset);
-                btnExport.addEventListener('click', exportData);
-                btnCalibrate.addEventListener('click', performCalibration);
-
-                mapZoomIn.addEventListener('click', () => applyZoom(0.7));
-                mapZoomOut.addEventListener('click', () => applyZoom(1.3));
-                mapAuto.addEventListener('click', setAutoScale);
-
-                window.addEventListener('resize', handleResize);
-                window.addEventListener('orientationchange', () => setTimeout(handleResize, 300));
-
-                setStatus('待机', false);
-                updateUI();
-                setupWaveTouch();
-
-                if (!animFrameId) renderLoop();
-                console.log('🧭 3D运动追踪器 · 标尺版已启动');
-            }
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
-            } else {
-                init();
-            }
-
-        })();
-    </script>
+            e.preventDefault();
+        }
+        function onTouchEnd(e) { activeIdx = -1; }
+        for (const container of containers) {
+            container.addEventListener('touchstart', onTouchStart, { passive: false });
+            container.addEventListener('touchmove', onTouchMove, { passive: false });
+            container.addEventListener('touchend', onTouchEnd, { passive: false });
+            container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+        }
+    }
+
+    // ---------- 窗口事件 ----------
+    let resizeTimer = null;
+    function handleResize() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            resizeAllCanvases();
+            drawMap(); drawHeight(); drawWaveforms();
+        }, 100);
+    }
+    function resizeAllCanvases() {
+        resizeCanvas(mapCanvas, mapContainer);
+        resizeCanvas(heightCanvas, heightContainer);
+        resizeCanvas(waveCanvasX, waveContainers[0]);
+        resizeCanvas(waveCanvasY, waveContainers[1]);
+        resizeCanvas(waveCanvasZ, waveContainers[2]);
+    }
+
+    // ---------- 初始化 ----------
+    function init() {
+        setTimeout(() => {
+            resizeAllCanvases();
+            drawMap(); drawHeight(); drawWaveforms();
+        }, 50);
+
+        btnStart.addEventListener('click', startRecording);
+        btnReset.addEventListener('click', fullReset);
+        btnExport.addEventListener('click', exportData);
+        btnCalibrate.addEventListener('click', performCalibration);
+
+        mapZoomIn.addEventListener('click', () => applyZoom(0.7));
+        mapZoomOut.addEventListener('click', () => applyZoom(1.3));
+        mapAuto.addEventListener('click', setAutoScale);
+
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', () => setTimeout(handleResize, 300));
+
+        setStatus('待机', false);
+        updateUI();
+        setupWaveTouch();
+
+        if (!animFrameId) renderLoop();
+        console.log('🧭 运动追踪 · 朴素积分 · 1dm限制已启动');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
+</script>
 </body>
 </html>
